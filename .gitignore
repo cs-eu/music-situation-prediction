@@ -207,7 +207,8 @@ marimo/_lsp/
 __marimo__/
 
 # Project-specific
-data/
+*.zip
+data*/
 mallet*/
 venv*/
 lda30alpha001/

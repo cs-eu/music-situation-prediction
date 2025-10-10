@@ -5,8 +5,8 @@ library(dplyr)
 library(forcats)
 
 # read in the different feature sets, which were produced with the respective Python scripts 
-bert = read.csv("data/external data/Lyrics/single feature groups/BERT_features_genius.csv") # 768 features
-nrc = read.csv("data/external data/Lyrics/single feature groups/NRC_features_genius.csv") # 10 features
+bert = read.csv("data/external data/Lyrics/single feature groups/features_genius.csv") # 768 features
+nrc = read.csv("data/external data/Lyrics/single feature groups/LIWC_genius.csv") # 10 features
 nrc = nrc[,c("lyricsID", "lyric_len", "positive", "negative", "fear", "anger", "sadness", "disgust" ,"joy", "trust", "surprise", "anticipation")]
 topics = read.csv("data/external data/Lyrics/single feature groups/Topics_features_genius.csv") # 30 features
 

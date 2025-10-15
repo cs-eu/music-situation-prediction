@@ -56,3 +56,34 @@ user_missing <- dt %>%
   summarise(frac_na_rows = mean(has_na))
 
 summary(user_missing$frac_na_rows)
+
+# ------------------------------------------------------------
+# 4. Distribution of the target(s)
+# ------------------------------------------------------------
+
+# Example target: music_track_danceability
+target <- "music_track_danceability"
+
+summary(dt[[target]])
+hist(dt[[target]], breaks = 30, main = paste("Distribution of", target), xlab = target)
+
+# Check missingness in target
+mean(is.na(dt[[target]]))
+
+# ------------------------------------------------------------
+# 5. Compare kept vs dropped rows (if you later filter)
+# ------------------------------------------------------------
+
+# Create a flag for complete cases in predictor + target
+all_cols <- colnames(dt)
+target_cols <- grep("^(music_|genius_|topic_|liwc_)", all_cols, value = TRUE)
+predictor_cols <- setdiff(all_cols, c("user_id","start_time","end_time", target_cols))
+
+dt$complete_case <- complete.cases(dt[, c(predictor_cols, target), with = FALSE])
+
+table(dt$complete_case)
+
+# Compare distribution of target between complete and incomplete cases
+boxplot(dt[[target]] ~ dt$complete_case,
+        main = paste(target, "by complete vs incomplete cases"),
+        ylab = target)

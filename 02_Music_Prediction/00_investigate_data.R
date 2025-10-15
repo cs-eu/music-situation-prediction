@@ -87,3 +87,49 @@ table(dt$complete_case)
 boxplot(dt[[target]] ~ dt$complete_case,
         main = paste(target, "by complete vs incomplete cases"),
         ylab = target)
+
+# ------------------------------------------------------------
+# 6. Correlation and redundancy check among predictors
+# ------------------------------------------------------------
+
+# Pick only numeric predictors
+numeric_preds <- predictor_cols[sapply(dt[, predictor_cols, with = FALSE], is.numeric)]
+
+# Compute correlations (may be heavy; you can sample columns if too big)
+corr_mat <- cor(dt[, numeric_preds, with = FALSE], use = "pairwise.complete.obs")
+
+# Identify highly correlated pairs (|corr| > 0.9)
+high_corr <- which(abs(corr_mat) > 0.9 & lower.tri(corr_mat), arr.ind = TRUE)
+head(data.frame(
+  var1 = rownames(corr_mat)[high_corr[,1]],
+  var2 = colnames(corr_mat)[high_corr[,2]],
+  corr = corr_mat[high_corr]
+))
+
+# ------------------------------------------------------------
+# 7. Basic per-user stats
+# ------------------------------------------------------------
+
+# Number of rows per user
+user_counts <- dt[, .N, by = user_id]
+summary(user_counts$N)
+
+ggplot(user_counts, aes(x = N)) +
+  geom_histogram(binwidth = 10, fill = "darkgreen") +
+  labs(title = "Number of Observations per User", x = "Observations", y = "Users")
+
+# ------------------------------------------------------------
+# 8. Optional: Outlier checks for key numeric predictors
+# ------------------------------------------------------------
+
+numeric_summary <- dt[, lapply(.SD, function(x) {
+  c(min = min(x, na.rm = TRUE),
+    q1 = quantile(x, 0.25, na.rm = TRUE),
+    median = median(x, na.rm = TRUE),
+    mean = mean(x, na.rm = TRUE),
+    q3 = quantile(x, 0.75, na.rm = TRUE),
+    max = max(x, na.rm = TRUE))
+}), .SDcols = numeric_preds]
+
+print(numeric_summary[, 1:10])  # show for first 10 predictors
+

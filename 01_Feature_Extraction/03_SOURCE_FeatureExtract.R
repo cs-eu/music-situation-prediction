@@ -119,12 +119,12 @@ app_categories <- sort(unique(app_categorization$Final_Rating))
 headset_states <- c("PLUGGED", "UNPLUGGED")
 screen_categories <- c("ON_UNLOCKED", "OFF_UNLOCKED", "OFF_LOCKED", "ON_LOCKED", "UNKNOWN")
 detected_activity_keys <- c("STILL", "WALKING", "RUNNING", "ON_BICYCLE", "ON_FOOT", "IN_VEHICLE", "IN_ROAD_VEHICLE", "IN_RAIL_VEHICLE", "IN_FOUR_WHEELER_VEHICLE")
-all_activity_names <- c("AIRPLANE", "APPS", "BATTERYSAVINGMODE", "BLUETOOTH", "CAMERA", "GPS", "NOTIFICATION", "PHONE", "POWER", "SCREEN", "SMS")
+all_activity_names <- c("AIRPLANE", "APPS", "BATTERYSAVINGMODE", "BLUETOOTH", "CAMERA", "CALENDAR", "GPS", "NOTIFICATION", "PHONE", "POWER", "SCREEN", "SMS")
 gps_features <- c("gps_count",  "gps_first_latitude",  "gps_first_longitude",  "gps_landuse_type",  "gps_home",  "gps_work")
 
 spotify_numeric_features <- c("track_danceability", "track_energy", "track_key", "track_loudness", "track_mode_major", "track_speechiness", "track_acousticness", "track_instrumentalness", "track_liveness", "track_valence", "track_tempo", "track_non_music")
 genius_numeric_features <- c("fear", "anger", "trust", "surprise", "positive", "negative", "sadness", "disgust", "joy", "anticipation", "lyric_len")
-topic_numeric_features <- paste0("Topic.", 0:29)
+topic_numeric_features <- paste0("Topic ", 0:29)
 liwc_numeric_features <- c("WC", "Analytic", "Clout", "Authentic", "Tone", "WPS", "Sixltr", "Dic", "function.", "pronoun", "ppron", "i", "we", "you_total", "you_sing", "you_plur", "you_formal", "other", "shehe", "they", "ipron", "article", "prep", "auxverb", "adverb", "conj", "negate", "verb", "adj", "compare", "interrog", "number", "quant", "affect", "posemo", "negemo", "anx", "anger", "sad", "social", "family", "friend", "female", "male", "cogproc", "insight", "cause", "discrep", "tentat", "certain", "differ", "percept", "see", "hear", "feel", "bio", "body", "health", "sexual", "ingest", "drives", "affiliation", "achiev", "power", "reward", "risk", "focuspast", "focuspresent", "focusfuture", "relativ", "motion", "space", "time", "work", "leisure", "home", "money", "relig", "death", "informal", "swear", "netspeak", "assent", "nonflu", "filler", "AllPunc", "Period", "Comma", "Colon", "SemiC", "QMark", "Exclam", "Dash", "Quote", "Apostro", "Parenth", "OtherP", "Emoji")
 
 # --- 5b. PRE-COMPUTE MASTER MUSIC FEATURES TABLE (MAJOR OPTIMIZATION) ---
@@ -190,7 +190,9 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
   
   # --- 3. GPS / Landuse ---
   t1 <- Sys.time()
-  gps_row <- gps_landuse_df[user_id == user_id & start_time == start_time & end_time == end_time]
+  gps_row <- gps_landuse_df[user_id == row$user_id &
+                              start_time <= row$end_time &
+                              end_time >= row$start_time]
   if (nrow(gps_row) == 0) {
     gps_features <- data.table(
       gps_count = 0,
@@ -201,6 +203,7 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
       gps_work = 0
     )
   } else {
+    # This part remains the same, but now operates on a single row
     gps_features <- gps_row[, .(
       gps_count,
       gps_first_latitude,
@@ -231,16 +234,19 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
   
   # --- Detected Activities ---
   if (length(snapshot_ids) > 0) {
-    detected_activity_summary <- snapshot_activities[
-      J(snapshot_ids),                              # keyed join for efficiency
-      lapply(.SD, sum, na.rm = TRUE),
-      .SDcols = detected_activity_keys,
-      nomatch = 0L
-    ]
+    tmp <- snapshot_activities[J(snapshot_ids), .SD, .SDcols = detected_activity_keys, nomatch = 0L]
+    if (nrow(tmp) == 0) {
+      detected_activity_summary <- data.table(matrix(0, nrow = 1, ncol = length(detected_activity_keys)))
+      setnames(detected_activity_summary, detected_activity_keys)
+    } else {
+      detected_activity_summary <- tmp[, lapply(.SD, sum, na.rm = TRUE)]
+    }
   } else {
     detected_activity_summary <- data.table(matrix(0, nrow = 1, ncol = length(detected_activity_keys)))
     setnames(detected_activity_summary, detected_activity_keys)
   }
+  
+  # Ensure all columns exist
   detected_activity_summary <- ensure_cols(detected_activity_summary, detected_activity_keys, fill = 0)
   setnames(detected_activity_summary, names(detected_activity_summary), paste0("detected_", names(detected_activity_summary)))
   time_log("Snapshot-based features", t1)
@@ -251,7 +257,7 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
     activity_summary <- data.table(matrix(0, nrow = 1, ncol = length(all_activity_names)))
     setnames(activity_summary, all_activity_names)
   } else {
-    tmp_act <- acts[, .N, by = activityName]
+    tmp_act <- acts[activityName %in% all_activity_names, .N, by = activityName]
     activity_summary <- dcast(tmp_act, . ~ activityName, value.var = "N", fill = 0)[, . := NULL]
     activity_summary <- ensure_cols(activity_summary, all_activity_names, fill = 0)
   }
@@ -321,13 +327,33 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
   # --- Add prefixes to column names ---
   # This is now safe because all tables are guaranteed to have the correct columns.
   setnames(spotify_means, paste0("music_", names(spotify_means)))
-  setnames(genius_means,  paste0("genius_", names(genius_means)))
-  setnames(topic_means,   paste0("topic_", names(topic_means)))
-  setnames(liwc_means,    paste0("liwc_", names(liwc_means)))
+  setnames(genius_means, paste0("genius_", names(genius_means)))
+  setnames(topic_means, paste0("topic_", gsub("\\s+", "_", trimws(names(topic_means)))))
+  setnames(liwc_means, paste0("liwc_", names(liwc_means)))
   time_log("Music features", t1)
   
   # --- 9. Combine All Features ---
   t1 <- Sys.time()
+  
+  feature_tables_to_check <- list(
+    gps = gps_features,
+    headset = headset_summary,
+    detected_activity = detected_activity_summary,
+    phone_activity = activity_summary,
+    app_usage = app_usage_summary,
+    screen_state = screen_state_summary
+  )
+  
+  for (tbl_name in names(feature_tables_to_check)) {
+    if (nrow(feature_tables_to_check[[tbl_name]]) != 1) {
+      warning(sprintf(
+        "⚠️ VALIDATION FAILED: Feature table '%s' for user %s at %s has %d rows (expected 1). Skipping window to prevent NAs.",
+        tbl_name, user_id, start_time, nrow(feature_tables_to_check[[tbl_name]])
+      ))
+    }
+  }
+  
+  time_log("Feature table validation", t1)
   final_features <- cbind(
     data.table(user_id = user_id, start_time = start_time, end_time = end_time, time_bin = time_bin),
     gps_features,
@@ -349,14 +375,338 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
   return(final_features)
 }
 
-# --- 10. Main Execution Block (Parallel, Resume-Safe, One File per Window) ---
+# # --- 9. Core Feature Extraction Function ---
+# extract_features_for_window <- function(user_id, start_time, end_time) {
+#   # --- 1. Filter activity data ---
+#   acts <- activity_data_raw[user_id == user_id & timestamp %between% c(start_time, end_time)]
+#   if (nrow(acts) == 0) return(NULL)
+# 
+#   # --- 2. Time Bin ---
+#   time_bin <- get_time_bin(start_time)
+# 
+#   # --- 3. GPS / Landuse ---
+#   gps_row <- gps_landuse_df[user_id == user_id & start_time == start_time & end_time == end_time]
+#   if (nrow(gps_row) == 0) {
+#     gps_features <- data.table(
+#       gps_count = 0,
+#       gps_first_latitude = NA_real_,
+#       gps_first_longitude = NA_real_,
+#       gps_landuse_type = "Unknown",
+#       gps_home = 0,
+#       gps_work = 0
+#     )
+#   } else {
+#     gps_features <- gps_row[, .(
+#       gps_count,
+#       gps_first_latitude,
+#       gps_first_longitude,
+#       gps_landuse_type,
+#       gps_home,
+#       gps_work
+#     )]
+#   }
+# 
+#   # --- 4. Snapshot-based Features ---
+#   snapshot_ids <- unique(acts$snapshot_id)
+#   snapshot_info <- snapshot_raw[id %in% snapshot_ids]
+# 
+#   # Headset summary
+#   if (nrow(snapshot_info) > 0 && "headsetState" %in% names(snapshot_info)) {
+#     tmp_headset <- snapshot_info[, .N, by = headsetState]
+#     headset_summary <- dcast(tmp_headset, . ~ headsetState, value.var = "N", fill = 0)[, . := NULL]
+#   } else {
+#     headset_summary <- data.table(matrix(0, nrow = 1, ncol = length(headset_states)))
+#     setnames(headset_summary, headset_states)
+#   }
+#   headset_summary <- ensure_cols(headset_summary, headset_states, fill = 0)
+#   setnames(headset_summary, names(headset_summary), paste0("headset_", names(headset_summary)))
+# 
+#   # Detected Activities
+#   if (length(snapshot_ids) > 0) {
+#     detected_activity_summary <- snapshot_activities[
+#       id %in% snapshot_ids,
+#       lapply(.SD, sum, na.rm = TRUE),
+#       .SDcols = detected_activity_keys
+#     ]
+#   } else {
+#     detected_activity_summary <- data.table(matrix(0, nrow = 1, ncol = length(detected_activity_keys)))
+#     setnames(detected_activity_summary, detected_activity_keys)
+#   }
+#   detected_activity_summary <- ensure_cols(detected_activity_summary, detected_activity_keys, fill = 0)
+#   setnames(detected_activity_summary, names(detected_activity_summary), paste0("detected_", names(detected_activity_summary)))
+# 
+#   # --- 5. Phone Activities ---
+#   if (nrow(acts) == 0) {
+#     activity_summary <- data.table(matrix(0, nrow = 1, ncol = length(all_activity_names)))
+#     setnames(activity_summary, all_activity_names)
+#   } else {
+#     tmp_act <- acts[, .N, by = activityName]
+#     activity_summary <- dcast(tmp_act, . ~ activityName, value.var = "N", fill = 0)[, . := NULL]
+#     activity_summary <- ensure_cols(activity_summary, all_activity_names, fill = 0)
+#   }
+#   setnames(activity_summary, names(activity_summary), paste0("phone_", names(activity_summary)))
+# 
+#   # --- 6. App Usage ---
+#   acts_with_pkg <- acts[!is.na(packageName) & packageName != ""]
+#   if (nrow(acts_with_pkg) == 0) {
+#     app_usage_summary <- data.table(matrix(0, nrow = 1, ncol = length(app_categories)))
+#     setnames(app_usage_summary, app_categories)
+#   } else {
+#     app_usage <- app_categorization[acts_with_pkg, on = "packageName", nomatch = 0]
+#     if (nrow(app_usage) == 0) {
+#       app_usage_summary <- data.table(matrix(0, nrow = 1, ncol = length(app_categories)))
+#       setnames(app_usage_summary, app_categories)
+#     } else {
+#       tmp_app <- app_usage[, .N, by = Final_Rating]
+#       app_usage_summary <- dcast(tmp_app, . ~ Final_Rating, value.var = "N", fill = 0)[, . := NULL]
+#       app_usage_summary <- ensure_cols(app_usage_summary, app_categories, fill = 0)
+#     }
+#   }
+#   setnames(app_usage_summary, names(app_usage_summary), paste0("app_", names(app_usage_summary)))
+# 
+#   # --- 7. Screen State ---
+#   screen_state_durations <- preprocessing_screen_window(acts, start_time, end_time)
+#   if (is.null(screen_state_durations) || nrow(screen_state_durations) == 0) {
+#     screen_state_summary <- data.table(matrix(0, nrow = 1, ncol = length(screen_categories)))
+#     setnames(screen_state_summary, screen_categories)
+#   } else {
+#     setDT(screen_state_durations)
+#     tmp_screen <- screen_state_durations[, .(duration_sec = sum(duration_sec, na.rm = TRUE)), by = event]
+#     screen_state_summary <- dcast(tmp_screen, . ~ event, value.var = "duration_sec", fill = 0)[, . := NULL]
+#     screen_state_summary <- ensure_cols(screen_state_summary, screen_categories, fill = 0)
+#   }
+#   setnames(screen_state_summary, names(screen_state_summary), paste0("screen_", names(screen_state_summary)))
+# 
+#   # --- 8. Music Features ---
+#   music_ids <- acts[activityName == "MUSIC" & !is.na(music_id), music_id]
+#   if (length(music_ids) == 0) return(NULL)
+# 
+#   music_window <- unique(music_raw[id %in% music_ids, .(title, artist)])
+#   if (nrow(music_window) == 0) return(NULL)
+# 
+#   matched_tracks <- spotify_data[music_window, on = .(track = title, artist = artist), nomatch = 0]
+#   if (nrow(matched_tracks) == 0) return(NULL)
+# 
+#   # Spotify audio features
+#   spotify_numeric_cols <- names(Filter(is.numeric, matched_tracks))
+#   spotify_means <- matched_tracks[, lapply(.SD, mean, na.rm = TRUE), .SDcols = spotify_numeric_cols]
+#   setnames(spotify_means, names(spotify_means), paste0("music_", names(spotify_means)))
+# 
+#   # Lyrics features
+#   matched_genius <- genius_features[matched_tracks, on = "track_spotify_id", nomatch = 0]
+#   matched_topic <- topic_features[matched_tracks, on = "track_spotify_id", nomatch = 0]
+#   matched_liwc <- liwc_features[matched_tracks, on = "track_spotify_id", nomatch = 0]
+# 
+#   genius_numeric_cols <- names(Filter(is.numeric, matched_genius))
+#   topic_numeric_cols <- names(Filter(is.numeric, matched_topic))
+#   liwc_numeric_cols <- names(Filter(is.numeric, matched_liwc))
+# 
+#   genius_means <- matched_genius[, lapply(.SD, mean, na.rm = TRUE), .SDcols = genius_numeric_cols]
+#   topic_means <- matched_topic[, lapply(.SD, mean, na.rm = TRUE), .SDcols = topic_numeric_cols]
+#   liwc_means <- matched_liwc[, lapply(.SD, mean, na.rm = TRUE), .SDcols = liwc_numeric_cols]
+# 
+#   # Fallbacks if no rows
+#   if (nrow(genius_means) == 0)
+#     genius_means <- data.table(matrix(NA, ncol = length(genius_numeric_cols), nrow = 1, dimnames = list(NULL, genius_numeric_cols)))
+#   if (nrow(topic_means) == 0)
+#     topic_means <- data.table(matrix(NA, ncol = length(topic_numeric_cols), nrow = 1, dimnames = list(NULL, topic_numeric_cols)))
+#   if (nrow(liwc_means) == 0)
+#     liwc_means <- data.table(matrix(NA, ncol = length(liwc_numeric_cols), nrow = 1, dimnames = list(NULL, liwc_numeric_cols)))
+# 
+#   setnames(genius_means, names(genius_means), paste0("genius_", names(genius_means)))
+#   setnames(topic_means, names(topic_means), paste0("topic_", names(topic_means)))
+#   setnames(liwc_means, names(liwc_means), paste0("liwc_", names(liwc_means)))
+# 
+#   # --- 9. Combine All Features ---
+#   final_features <- cbind(
+#     data.table(user_id = user_id, start_time = start_time, end_time = end_time, time_bin = time_bin),
+#     gps_features,
+#     headset_summary,
+#     detected_activity_summary,
+#     activity_summary,
+#     app_usage_summary,
+#     screen_state_summary,
+#     spotify_means,
+#     genius_means,
+#     topic_means,
+#     liwc_means
+#   )
+# 
+#   return(final_features)
+# }
 
+# # --- 10. Main Execution Block ---
+# offset <- 0
+# output_file <- "data/results/features_all_windows_optimized.rds"
+# window_indices <- seq((offset + 1), nrow(music_windows))
+# 
+# # Set up parallel processing
+# options(future.globals.maxSize = 8 * 1024^3)  # 8 GB limit
+# plan(multisession) # Automatically uses available cores
+# 
+# message(sprintf("Starting parallel feature extraction for %d windows...", length(window_indices)))
+# 
+# # Use future_lapply for parallel execution
+# all_features_list <- future_lapply(window_indices, function(i) {
+#   row <- music_windows[i, ]
+#   
+#   # Call the optimized function
+#   features <- extract_features_for_window(
+#     user_id = row$user_id,
+#     start_time = row$start_time,
+#     end_time = row$end_time
+#   )
+#   
+#   # Optional progress indicator
+#   if (i %% 5 == 0) {
+#     cat(sprintf("✓ Window %d processed\n", i))
+#   }
+#   
+#   return(features)
+# }, future.seed = TRUE) # for reproducibility
+# 
+# # --- 11. Combine Results and Save ---
+# message("Combining results...")
+# # Filter out NULLs from skipped windows and bind rows efficiently
+# all_features <- rbindlist(all_features_list, fill = TRUE)
+# 
+# # Ensure consistent column order before saving (optional but good practice)
+# fixed_column_names <- c(
+#   "user_id", "start_time", "end_time", "time_bin",
+#   names(gps_features),
+#   paste0("headset_", headset_states),
+#   paste0("detected_", detected_activity_keys),
+#   paste0("phone_", all_activity_names),
+#   paste0("app_", app_categories),
+#   paste0("screen_", screen_categories),
+#   paste0("music_", spotify_numeric_features),
+#   paste0("genius_", genius_numeric_features),
+#   paste0("topic_", topic_numeric_features),
+#   paste0("liwc_", liwc_numeric_features)
+# )
+# # Select only columns that actually exist in the final data table
+# final_cols <- intersect(fixed_column_names, names(all_features))
+# all_features <- all_features[, ..final_cols]
+# 
+# 
+# saveRDS(all_features, output_file)
+# 
+# message(sprintf("Feature extraction completed. Saved %d rows to %s", nrow(all_features), output_file))
+
+
+
+# --- 10. Main Execution Block (Sequential Mode with Resume) ---
+offset <- 0
+output_file <- "data/results/new/features_all_windows_optimized.rds"
+window_indices <- seq((offset + 1), nrow(music_windows))
+
+message(sprintf("Starting sequential feature extraction for %d windows...", length(window_indices)))
+
+# --- Load previous intermediate results if any ---
+intermediate_files <- list.files("data/new/results", pattern = "^features_partial_\\d+\\.rds$", full.names = TRUE)
+all_features_list <- vector("list", length(window_indices))
+
+if (length(intermediate_files) > 0) {
+  message("Found intermediate files, resuming from previous progress...")
+  # Load the most recent one
+  latest_file <- intermediate_files[which.max(as.numeric(gsub(".*features_partial_(\\d+)\\.rds", "\\1", intermediate_files)))]
+  prev_features <- readRDS(latest_file)
+  all_features_list[seq_along(prev_features)] <- prev_features
+  start_index <- sum(sapply(prev_features, function(x) !is.null(x))) + 1
+  message(sprintf("Resuming from window %d", start_index))
+} else {
+  start_index <- 1
+}
+
+# Start timer
+start_time_all <- Sys.time()
+
+# Sequential execution with live progress
+for (i in start_index:length(window_indices)) {
+  row <- music_windows[window_indices[i], ]
+
+  # Skip windows already processed
+  if (!is.null(all_features_list[[i]])) next
+
+  # Try-catch to skip any failed iterations safely
+  features <- tryCatch(
+    extract_features_for_window(
+      user_id = row$user_id,
+      start_time = row$start_time,
+      end_time = row$end_time
+    ),
+    error = function(e) {
+      message(sprintf("⚠️ Error in window %d (%s - %s): %s",
+                      i, row$start_time, row$end_time, e$message))
+      return(NULL)
+    }
+  )
+
+  # Ensure the output is exactly one row
+  if (is.data.table(features) && nrow(features) == 1L) {
+    all_features_list[[i]] <- features
+  } else if (!is.null(features) && nrow(features) > 1L) {
+    warning(sprintf("Feature extraction returned %d rows for window %d — keeping first row.", nrow(features), i))
+    all_features_list[[i]] <- features[1L, ]
+  } else {
+    all_features_list[[i]] <- NULL
+  }
+
+  # Progress indicator every N windows
+  if (i %% 50 == 0 || i == length(window_indices)) {
+    elapsed <- difftime(Sys.time(), start_time_all, units = "mins")
+    pct <- round(100 * i / length(window_indices), 1)
+    message(sprintf("✓ Processed %d / %d windows (%.1f%%) — Elapsed: %.1f min",
+                    i, length(window_indices), pct, as.numeric(elapsed)))
+
+    # Intermediate save every 500 windows
+    if (i %% 500 == 0 || i == length(window_indices)) {
+      tmp_file <- sprintf("data/results/new/features_partial_%d.rds", i)
+      saveRDS(all_features_list, tmp_file)
+      message(sprintf("Saved intermediate results to %s", tmp_file))
+    }
+  }
+}
+
+# --- 11. Combine Results and Save ---
+message("Combining results...")
+valid_features <- Filter(Negate(is.null), all_features_list)
+all_features <- rbindlist(valid_features, fill = TRUE)
+
+# Ensure consistent column order before saving (optional but good practice)
+fixed_column_names <- c(
+  "user_id", "start_time", "end_time", "time_bin",
+  names(gps_features),
+  paste0("headset_", headset_states),
+  paste0("detected_", detected_activity_keys),
+  paste0("phone_", all_activity_names),
+  paste0("app_", app_categories),
+  paste0("screen_", screen_categories),
+  paste0("music_", spotify_numeric_features),
+  paste0("genius_", genius_numeric_features),
+  paste0("topic_", topic_numeric_features),
+  paste0("liwc_", liwc_numeric_features)
+)
+final_cols <- intersect(fixed_column_names, names(all_features))
+all_features <- all_features[, ..final_cols]
+
+# Save final results
+saveRDS(all_features, output_file)
+
+total_elapsed <- difftime(Sys.time(), start_time_all, units = "mins")
+message(sprintf("Feature extraction completed. Saved %d rows to %s (%.1f min total)",
+                nrow(all_features), output_file, as.numeric(total_elapsed)))
+
+
+
+# --- 10. Main Execution Block (Parallel, Resume-Safe, One File per Window) ----------------
+# ------------------------------------------------------------------------------------------
 library(future)
 library(future.apply)
 library(data.table)
 
-output_dir <- "data/results/features_by_window"
-final_output_file <- "data/results/features_all_windows_combined.rds"
+output_dir <- "data/results/new"
+final_output_file <- "data/results/new/features_all_windows_combined.rds"
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 message(sprintf("📦 Preparing to extract features for %d windows...", nrow(music_windows)))
@@ -413,6 +763,47 @@ if (length(remaining_indices) == 0) {
   message(sprintf("🏁 Parallel extraction completed in %.1f minutes", as.numeric(total_elapsed)))
 }
 
+# --- 11. Combine All Per-Window Files ---
+message("🔄 Combining all window results...")
+
+all_files <- list.files(output_dir, pattern = "^window_\\d+\\.rds$", full.names = TRUE)
+all_features_list <- lapply(all_files, function(f) {
+  obj <- readRDS(f)
+  if (is.null(obj)) return(NULL)
+  as.data.table(obj)
+})
+
+valid_features <- Filter(Negate(is.null), all_features_list)
+all_features <- rbindlist(valid_features, fill = TRUE)
+
+# --- 12. Ensure Consistent Column Order ---
+fixed_column_names <- c(
+  "user_id", "start_time", "end_time", "time_bin",
+  gps_features,
+  paste0("headset_", headset_states),
+  paste0("detected_", detected_activity_keys),
+  paste0("phone_", all_activity_names),
+  paste0("app_", app_categories),
+  paste0("screen_", screen_categories),
+  paste0("music_", spotify_numeric_features),
+  paste0("genius_", genius_numeric_features),
+  paste0("topic_", topic_numeric_features),
+  paste0("liwc_", liwc_numeric_features)
+)
+final_cols <- intersect(fixed_column_names, names(all_features))
+all_features <- all_features[, ..final_cols]
+
+# --- 13. Save Final Combined Dataset ---
+saveRDS(all_features, final_output_file)
+message(sprintf("✅ Combined and saved %d total rows to %s", nrow(all_features), final_output_file))
+
+
+
+
+
+
+
+
 
 library(data.table)
 library(readr)
@@ -444,4 +835,5 @@ for (file in partial_files[-1]) {
   gc()
 }
 
-message("All partial files successfully combined into a single CSV.")
+message("✅ All partial files successfully combined into a single CSV.")
+

@@ -13,7 +13,7 @@ library(osmdata)
 
 # -------------------------------------------------
 # Settings
-setwd("/home/clemensschwarzmann/MusicInSituations/01_Feature_Extraction")
+setwd("/home/clemensschwarzmann/music-situation-prediction/01_Feature_Extraction")
 
 # --- Load input data
 music_windows <- read_csv("data/results/music_windows_all.csv",

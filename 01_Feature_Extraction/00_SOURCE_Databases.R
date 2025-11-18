@@ -27,7 +27,7 @@ phonestudy = dbConnect(
   port = 3306,
   dbname = "live")
 
-setwd("/home/clemensschwarzmann/MusicInSituations/01_Feature_Extraction")
+setwd("/home/clemensschwarzmann/music-situation-prediction/01_Feature_Extraction")
 
 #user-ids, starting-times, etc. 
 studymanagement = DBI::dbReadTable(phonestudy, "ps_participant")

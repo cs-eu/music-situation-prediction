@@ -6,7 +6,7 @@ BASE_DIR <- getwd()
 DATA_DIR <- file.path(BASE_DIR, "data")
 HELPER_DIR <- file.path(DATA_DIR, "helper")
 RESULTS_DIR <- file.path(DATA_DIR, "results")
-UTILS_DIR <- file.path(BASE_DIR, "utils")
+# UTILS_DIR <- file.path(BASE_DIR, "utils")
 
 # --- Database Configuration ---
 # Database credentials should be loaded from a secure location
@@ -25,7 +25,7 @@ PATHS <- list(
   genius_features = file.path(HELPER_DIR, "lyrics-features", "genius_features.csv"),
   topic_features = file.path(HELPER_DIR, "lyrics-features", "topic_features.csv"),
   liwc_features = file.path(HELPER_DIR, "lyrics-features", "Lyrics_LIWC.csv"),
-  screen_utils = file.path(UTILS_DIR, "label_usage_sessions.R")
+  screen_utils = file.path(HELPER_DIR, "label_usage_sessions.R")
 )
 
 # --- Output Configuration ---

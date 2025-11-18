@@ -100,7 +100,7 @@ prepare_data_tables <- function(data_list) {
   data_list$topic_features[, track_spotify_id := sub("lyrics:", "", lyricsID)]
   data.table::setkey(data_list$topic_features, track_spotify_id)
   
-  data_list$liwc_features[, track_spotify_id := sub("lyrics:", "", key)]
+  data_list$liwc_features[, track_spotify_id := sub("lyrics:", "", track_uri)]
   data.table::setkey(data_list$liwc_features, track_spotify_id)
   
   # Clean up app categorization

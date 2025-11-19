@@ -157,7 +157,7 @@ extract_features_for_window <- function(user_id, start_time, end_time,
   if (verbose) {
     total_dt <- round(as.numeric(difftime(Sys.time(), t0, units = "secs")), 3)
     message(sprintf(
-      "✅ Window processed for user %s (%.3f sec total)",
+      "Window processed for user %s (%.3f sec total)",
       user_id, total_dt
     ))
   }

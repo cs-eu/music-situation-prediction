@@ -30,9 +30,9 @@ PATHS <- list(
 
 # --- Output Configuration ---
 OUTPUT_CONFIG <- list(
-  output_dir = file.path(RESULTS_DIR, "new"),
+  output_dir = file.path(RESULTS_DIR, "window_features"),
   output_file_pattern = "window_%05d.rds",
-  final_output_file = file.path(RESULTS_DIR, "new", "features_all_windows_combined.rds")
+  final_output_file = file.path(RESULTS_DIR, "features_all_windows_combined.rds")
 )
 
 # --- Processing Configuration ---

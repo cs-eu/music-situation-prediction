@@ -84,7 +84,7 @@ create_time_logger <- function(verbose = TRUE) {
 validate_feature_table <- function(tbl_name, dt, user_id, start_time) {
   if (nrow(dt) != 1) {
     warning(sprintf(
-      "⚠️ VALIDATION FAILED: Feature table '%s' for user %s at %s has %d rows (expected 1).",
+      "VALIDATION FAILED: Feature table '%s' for user %s at %s has %d rows (expected 1).",
       tbl_name, user_id, start_time, nrow(dt)
     ))
     return(FALSE)

@@ -162,20 +162,18 @@ message(sprintf("Found %d processed windows, %d remaining to compute",
 if (length(remaining_indices) == 0) {
   message("All windows already processed — skipping computation.")
 } else {
-  # Parallel setup
-  options(future.globals.maxSize = PROCESSING_CONFIG$future_globals_max_size)
-  plan(multisession, workers = PROCESSING_CONFIG$num_workers)
   
-  # Run extraction in parallel
   start_time_all <- Sys.time()
   
-  future_lapply(remaining_indices, function(i) {
+  # Sequential for loop
+  for (i in remaining_indices) {
     row <- music_windows[i, ]
     
     out_file <- sprintf("%s/window_%05d.rds", output_dir, i)
-    if (file.exists(out_file)) return(NULL)  # Skip if already done
+    if (file.exists(out_file)) next  # Skip if already done
     
     start_time <- Sys.time()
+    
     features <- tryCatch(
       extract_features_for_window(
         user_id = row$user_id,
@@ -202,14 +200,66 @@ if (length(remaining_indices) == 0) {
                         i, row$user_id, elapsed))
       }
     }
+    
     gc()
-    NULL
-  })
+  }
   
   total_elapsed <- difftime(Sys.time(), start_time_all, units = "mins")
-  message(sprintf("Parallel extraction completed in %.1f minutes", 
+  message(sprintf("Extraction completed in %.1f minutes", 
                   as.numeric(total_elapsed)))
 }
+
+# if (length(remaining_indices) == 0) {
+#   message("All windows already processed — skipping computation.")
+# } else {
+#   # Parallel setup
+#   options(future.globals.maxSize = PROCESSING_CONFIG$future_globals_max_size)
+#   plan(multisession, workers = PROCESSING_CONFIG$num_workers)
+#   
+#   # Run extraction in parallel
+#   start_time_all <- Sys.time()
+#   
+#   future_lapply(remaining_indices, function(i) {
+#     row <- music_windows[i, ]
+#     
+#     out_file <- sprintf("%s/window_%05d.rds", output_dir, i)
+#     if (file.exists(out_file)) return(NULL)  # Skip if already done
+#     
+#     start_time <- Sys.time()
+#     features <- tryCatch(
+#       extract_features_for_window(
+#         user_id = row$user_id,
+#         start_time = row$start_time,
+#         end_time = row$end_time,
+#         data_objects = data_objects,
+#         constants = constants_list,
+#         preprocessing_screen_window = preprocessing_screen_window,
+#         verbose = FALSE
+#       ),
+#       error = function(e) {
+#         message(sprintf("Error in window %d (%s - %s): %s",
+#                         i, row$start_time, row$end_time, e$message))
+#         return(NULL)
+#       }
+#     )
+#     
+#     if (!is.null(features) && nrow(features) == 1L) {
+#       saveRDS(features, out_file)
+#       elapsed <- round(as.numeric(difftime(Sys.time(), start_time, 
+#                                            units = "secs")), 2)
+#       if (i %% 50 == 0) {
+#         message(sprintf("Saved window %d (User %s) — %.2f sec", 
+#                         i, row$user_id, elapsed))
+#       }
+#     }
+#     gc()
+#     NULL
+#   })
+#   
+#   total_elapsed <- difftime(Sys.time(), start_time_all, units = "mins")
+#   message(sprintf("Parallel extraction completed in %.1f minutes", 
+#                   as.numeric(total_elapsed)))
+# }
 
 # --- Combine All Per-Window Files ---
 message("Combining all window results...")

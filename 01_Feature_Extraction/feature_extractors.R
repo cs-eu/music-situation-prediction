@@ -17,9 +17,16 @@ extract_gps_features <- function(user_id, start_time, end_time,
   window_end <- end_time
   gps_row <- gps_landuse_df[
     user_id == user_id &
-      start_time <= window_end &
-      end_time >= window_start
+      start_time == window_end &
+      end_time == window_start
   ]
+  if (nrow(gps_row) > 1) {
+    message(sprintf(
+      "GPS FAILED: Feature gps for user %s at %s - %s has %d rows (expected 1).",
+      user_id, window_start, window_end, nrow(gps_row)
+    ))
+    str(gps_row)
+  }
   
   if (nrow(gps_row) == 0) {
     gps_features <- data.table(

@@ -80,7 +80,7 @@ constants_list <- list(
 )
 
 # --- 7. Main Execution: Parallel Processing ---
-message(sprintf("📦 Preparing to extract features for %d windows...", 
+message(sprintf("Preparing to extract features for %d windows...", 
                 nrow(all_data$music_windows)))
 
 # Create output directory
@@ -98,11 +98,11 @@ processed_indices <- as.integer(
 remaining_indices <- setdiff(seq_len(nrow(all_data$music_windows)), 
                              processed_indices)
 
-message(sprintf("🔍 Found %d processed windows, %d remaining to compute",
+message(sprintf("Found %d processed windows, %d remaining to compute",
                 length(processed_indices), length(remaining_indices)))
 
 if (length(remaining_indices) == 0) {
-  message("✅ All windows already processed — skipping computation.")
+  message("All windows already processed — skipping computation.")
 } else {
   # Parallel setup
   options(future.globals.maxSize = PROCESSING_CONFIG$future_globals_max_size)
@@ -129,7 +129,7 @@ if (length(remaining_indices) == 0) {
         verbose = FALSE  # Less verbose in parallel mode
       ),
       error = function(e) {
-        message(sprintf("⚠️ Error in window %d (%s - %s): %s",
+        message(sprintf("Error in window %d (%s - %s): %s",
                         i, row$start_time, row$end_time, e$message))
         return(NULL)
       }
@@ -140,7 +140,7 @@ if (length(remaining_indices) == 0) {
       elapsed <- round(as.numeric(difftime(Sys.time(), start_time, 
                                            units = "secs")), 2)
       if (i %% 50 == 0) {
-        message(sprintf("✅ Saved window %d (User %s) — %.2f sec", 
+        message(sprintf("Saved window %d (User %s) — %.2f sec", 
                         i, row$user_id, elapsed))
       }
     }
@@ -149,12 +149,12 @@ if (length(remaining_indices) == 0) {
   })
   
   total_elapsed <- difftime(Sys.time(), start_time_all, units = "mins")
-  message(sprintf("🏁 Parallel extraction completed in %.1f minutes", 
+  message(sprintf("Parallel extraction completed in %.1f minutes", 
                   as.numeric(total_elapsed)))
 }
 
 # --- 8. Combine All Per-Window Files ---
-message("🔄 Combining all window results...")
+message("Combining all window results...")
 
 all_files <- list.files(
   OUTPUT_CONFIG$output_dir,
@@ -198,8 +198,8 @@ all_features <- all_features[, ..final_cols]
 
 # --- 10. Save Final Combined Dataset ---
 saveRDS(all_features, OUTPUT_CONFIG$final_output_file)
-message(sprintf("✅ Combined and saved %d total rows to %s", 
+message(sprintf("Combined and saved %d total rows to %s", 
                 nrow(all_features), OUTPUT_CONFIG$final_output_file))
 
-message("🎉 Feature extraction completed successfully!")
+message("Feature extraction completed successfully!")
 

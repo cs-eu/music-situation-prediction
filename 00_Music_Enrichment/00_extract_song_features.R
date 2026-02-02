@@ -10,7 +10,8 @@
 #' @note Ensure all required utility scripts are sourced and dependencies installed.
 #' 
 
-setwd("/home/clemensschwarzmann/MusicInSituations/00_Music_Enrichment")
+# adapt the working directory to the project root
+setwd("")
 
 # Load utility scripts for setup, data I/O, Spotify API helpers, and processing functions
 source("utils/setup.R")
@@ -36,7 +37,7 @@ unmatched <- distinct_tracks %>%
   distinct(artist_clean, track_clean, .keep_all = TRUE)
 
 # Run Spotify search to find missing matches, starting from offset
-run_search(unmatched, offset = 27390, output_file = "data/results/matched_tracks.csv")
+run_search(unmatched, offset = 0, output_file = "data/results/matched_tracks.csv")
 
 # Read the new matched tracks results from CSV
 matched_tracks <- read_csv("data/results/matched_tracks.csv")

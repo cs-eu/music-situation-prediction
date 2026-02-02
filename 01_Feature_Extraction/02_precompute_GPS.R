@@ -11,11 +11,10 @@ library(purrr)
 library(readr)
 library(osmdata)
 
-# -------------------------------------------------
-# Settings
-setwd("/home/clemensschwarzmann/music-situation-prediction/01_Feature_Extraction")
+# Set working directory as project root folder
+setwd("")
 
-# --- Load input data
+# Load input data
 music_windows <- read_csv("data/results/music_windows_all.csv",
                           col_types = cols(
                             user_id = col_character(),
@@ -26,9 +25,7 @@ music_windows <- read_csv("data/results/music_windows_all.csv",
 home_locations <- read.csv("data/helper/gps_home.csv")
 work_locations <- read.csv("data/helper/gps_work.csv")
 
-# -------------------------------------------------
 # Helper functions
-
 is_near_location <- function(user_lon, user_lat, ref_lon, ref_lat, tolerance_m = 15) {
   if (any(is.na(c(user_lon, user_lat, ref_lon, ref_lat)))) return(FALSE)
   u <- st_sfc(st_point(c(user_lon, user_lat)), crs = 4326) %>% st_transform(3857)
@@ -91,7 +88,6 @@ get_landuse_type_cached <- function(lat, lon, buffer_m = 60) {
   "unclassified"
 }
 
-# -------------------------------------------------
 # Compute GPS + land-use per window
 results <- vector("list", nrow(music_windows))
 
@@ -138,7 +134,6 @@ for (i in seq_len(nrow(music_windows))) {
 
 gps_landuse_df <- bind_rows(results)
 
-# -------------------------------------------------
 # Save results
 write_csv(gps_landuse_df, "data/results/gps_landuse_by_window.csv")
 saveRDS(gps_landuse_df,  "data/results/gps_landuse_by_window.rds")

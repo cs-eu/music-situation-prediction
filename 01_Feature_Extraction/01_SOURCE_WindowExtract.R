@@ -1,4 +1,3 @@
-# 01_MusicWindowExtract_DirectCSV.R
 library(dplyr)
 library(lubridate)
 library(DBI)

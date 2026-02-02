@@ -26,13 +26,9 @@ library(readr)
 library(jsonlite)
 library(spotifyr)
 
-# Set Spotify API credentials
-Sys.setenv(SPOTIFY_CLIENT_ID = 'd5cc4bff2e4342de88b50b21ca814f4f')
-Sys.setenv(SPOTIFY_CLIENT_SECRET = '1d9143a413f04120b2f1a5f1f69e23d5')
-# Sys.setenv(SPOTIFY_CLIENT_ID = 'de8ae879241c46d9a1a6ce25e31979f7')
-# Sys.setenv(SPOTIFY_CLIENT_SECRET = 'ee32918785f24d25a3108d6b59c02a7f')
-# Sys.setenv(SPOTIFY_CLIENT_ID = '0d681379a22f41178e5224a733681fa4')
-# Sys.setenv(SPOTIFY_CLIENT_SECRET = 'd18a55f1c07f45e79ff382adbf3d6ca2')
+# Replace with your actual Spotify Client ID and Secret
+Sys.setenv(SPOTIFY_CLIENT_ID = '')
+Sys.setenv(SPOTIFY_CLIENT_SECRET = '')
 access_token <- get_spotify_access_token()
 
 #' Normalize text for matching

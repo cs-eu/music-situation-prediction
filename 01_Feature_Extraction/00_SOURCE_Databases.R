@@ -27,7 +27,8 @@ phonestudy = dbConnect(
   port = 3306,
   dbname = "live")
 
-setwd("/home/clemensschwarzmann/music-situation-prediction/01_Feature_Extraction")
+# SET WORKING DIRECTORY
+setwd("")
 
 #user-ids, starting-times, etc. 
 studymanagement = DBI::dbReadTable(phonestudy, "ps_participant")
@@ -53,4 +54,3 @@ for (table in names(column_names)) {
   print(column_names[[table]])
   cat("\n")
 }
-

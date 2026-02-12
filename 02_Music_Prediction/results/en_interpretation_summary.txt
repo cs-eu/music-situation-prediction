@@ -1,0 +1,23 @@
+num__genius_positive,↑ cat__music_track_key_10
+num__liwc_Apostro,↓ cat__music_track_key_10
+num__liwc_assent,↑ cat__music_track_key_11
+num__liwc_cogproc,↓ num__phone_GPS
+num__liwc_death,↑ num__phone_GPS
+num__liwc_differ,↓ num__phone_GPS
+num__liwc_number,↑ cat__gps_landuse_type_landuse:farmland
+num__liwc_power,"↑ cat__music_track_key_10 | ↓ num__hour_sin, cat__time_bin_Afternoon"
+num__liwc_sexual,↑ num__phone_GPS
+num__liwc_swear,↑ cat__gps_landuse_type_building:warehouse
+num__liwc_verb,↓ cat__music_track_key_1
+num__music_track_acousticness,↑ num__session_duration_sec | ↓ bin__headset_UNPLUGGED
+num__music_track_danceability,"↑ num__hour_sin, cat__time_bin_Evening, cat__time_bin_Afternoon"
+num__music_track_energy,"↑ bin__headset_UNPLUGGED | ↓ num__session_duration_sec, num__screen_UNKNOWN"
+num__music_track_instrumentalness,↑ cat__gps_landuse_type_landuse:farmland | ↓ num__hour_sin
+num__music_track_loudness,↓ num__session_duration_sec
+num__music_track_mode_major,"↓ cat__music_track_key_11, cat__music_track_key_9, cat__music_track_key_10"
+num__music_track_tempo,↑ cat__music_track_key_10
+num__music_track_valence,↑ cat__music_track_key_11
+num__topic_Topic_12,↑ cat__gps_landuse_type_landuse:farmland
+num__topic_Topic_17,↑ cat__music_track_key_10
+num__topic_Topic_24,↑ cat__music_track_key_10
+num__topic_Topic_9,↓ num__hour_cos

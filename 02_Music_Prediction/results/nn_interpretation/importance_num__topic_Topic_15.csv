@@ -1,0 +1,16 @@
+feature,importance
+num__dow_cos,0.1392108052968979
+num__hour_sin,0.1296854317188263
+num__dow_sin,0.1222212165594101
+num__hour_cos,0.11145807802677155
+bin__phone_BLUETOOTH,0.10064815729856491
+bin__headset_UNPLUGGED,0.09828856587409973
+bin__headset_PLUGGED,0.09614891558885574
+bin__phone_POWER,0.09290079027414322
+num__app_Audio_Entertainment,0.0754590705037117
+cat__time_bin_Evening,0.0699038952589035
+bin__phone_CAMERA,0.06672371178865433
+cat__music_track_key_6,0.06255429983139038
+cat__time_bin_Afternoon,0.06081339344382286
+num__app_System,0.05877766013145447
+cat__music_track_key_5,0.05610597878694534

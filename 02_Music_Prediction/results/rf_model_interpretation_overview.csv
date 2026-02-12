@@ -1,0 +1,8 @@
+target,feature,importance,effect_direction,effect_slope
+num__liwc_conj,num__app_Time,0.0230184940236226,positive,0.13851359054438142
+num__liwc_home,num__app_Tools,0.0227744067932432,positive,0.07848451227123385
+num__music_track_danceability,num__detected_IN_FOUR_WHEELER_VEHICLE,0.0432706590099808,positive,0.05177728616438868
+num__music_track_speechiness,num__detected_IN_FOUR_WHEELER_VEHICLE,0.0279455471726241,positive,0.05015289689249271
+num__topic_Topic_4,num__app_Tools,0.026371509980056,positive,0.06812851349268294
+num__topic_Topic_6,num__detected_IN_FOUR_WHEELER_VEHICLE,0.0365458359906317,positive,0.05738273173504836
+num__topic_Topic_9,num__app_Security,0.0283970066497769,positive,0.06259763471652553

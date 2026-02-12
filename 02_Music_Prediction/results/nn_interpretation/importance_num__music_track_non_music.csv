@@ -1,0 +1,16 @@
+feature,importance
+bin__phone_POWER,1.1221196473343298e-05
+cat__time_bin_Morning,7.926711987238377e-06
+num__screen_ON_LOCKED,6.870653578516794e-06
+cat__music_track_key_5,6.459838004957419e-06
+bin__headset_PLUGGED,6.193380613694899e-06
+cat__music_track_key_6,5.0291400839341804e-06
+bin__phone_BLUETOOTH,4.947000888932962e-06
+num__dow_sin,4.372661805973621e-06
+cat__gps_landuse_type_leisure:sports_centre,3.90562991015031e-06
+num__hour_sin,3.2751913749962114e-06
+num__app_Health,3.2300558814313263e-06
+num__app_Audio_Entertainment,3.1899344321573153e-06
+num__dow_cos,3.0955113743402762e-06
+cat__time_bin_Night,2.5136266685876762e-06
+bin__phone_CALENDAR,2.444807478241273e-06

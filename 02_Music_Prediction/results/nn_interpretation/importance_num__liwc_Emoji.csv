@@ -1,0 +1,16 @@
+feature,importance
+num__app_Settings,8.314434126077686e-06
+num__gps_count,0.0
+cat__gps_landuse_type_amenity:nursing_home,0.0
+cat__gps_landuse_type_landuse:commercial,0.0
+cat__gps_landuse_type_highway:service,0.0
+cat__gps_landuse_type_building:yes,0.0
+cat__gps_landuse_type_building:warehouse,0.0
+cat__gps_landuse_type_building:residential,0.0
+cat__gps_landuse_type_building:office,0.0
+cat__gps_landuse_type_building:industrial,0.0
+cat__gps_landuse_type_building:house,0.0
+cat__gps_landuse_type_building:apartments,0.0
+cat__gps_landuse_type_amenity:school,0.0
+cat__gps_landuse_type_amenity:parking,0.0
+cat__gps_landuse_type_amenity:bus_station,0.0

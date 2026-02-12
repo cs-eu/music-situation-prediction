@@ -1,0 +1,68 @@
+num__genius_anticipation,↑ num__phone_NOTIFICATION
+num__genius_fear,↓ num__hour_sin
+num__genius_joy,↓ num__hour_cos
+num__genius_lyric_len,↑ num__hour_cos
+num__genius_negative,↑ num__hour_cos
+num__genius_positive,↓ num__hour_cos
+num__liwc_AllPunc,↑ num__app_Audio_Entertainment
+num__liwc_Analytic,↑ num__app_Audio_Entertainment
+num__liwc_Apostro,↑ num__hour_cos | ↓ num__hour_sin
+num__liwc_Clout,↓ num__hour_cos
+num__liwc_Comma,↑ num__app_Audio_Entertainment
+num__liwc_Dic,↓ num__hour_sin
+num__liwc_Exclam,"↑ num__app_Audio_Entertainment, num__phone_GPS"
+num__liwc_Period,↑ num__app_Audio_Entertainment
+num__liwc_QMark,↓ num__hour_sin
+num__liwc_Tone,↓ num__hour_cos
+num__liwc_WC,"↑ num__hour_sin, num__hour_cos | ↓ num__phone_NOTIFICATION"
+num__liwc_WPS,↓ num__app_Audio_Entertainment
+num__liwc_adverb,↑ num__phone_APPS
+num__liwc_affiliation,↑ num__app_Audio_Entertainment
+num__liwc_article,↓ num__phone_APPS
+num__liwc_assent,↓ num__phone_NOTIFICATION
+num__liwc_auxverb,"↑ num__hour_cos, num__phone_APPS | ↓ num__hour_sin"
+num__liwc_cogproc,↑ num__phone_APPS
+num__liwc_conj,↑ num__hour_cos
+num__liwc_differ,↑ num__phone_NOTIFICATION
+num__liwc_family,"↑ num__phone_GPS, num__app_Audio_Entertainment"
+num__liwc_filler,↑ num__app_Audio_Entertainment
+num__liwc_focusfuture,↑ num__hour_cos
+num__liwc_focuspast,"↓ num__hour_cos, num__hour_sin"
+num__liwc_focuspresent,↑ num__hour_cos
+num__liwc_insight,↑ num__hour_cos
+num__liwc_ipron,↑ num__hour_cos
+num__liwc_leisure,↑ num__app_Audio_Entertainment
+num__liwc_male,↓ num__hour_sin
+num__liwc_money,"↑ num__detected_IN_FOUR_WHEELER_VEHICLE, num__phone_GPS"
+num__liwc_negate,↑ num__hour_cos
+num__liwc_netspeak,"↑ num__app_Audio_Entertainment, num__phone_SCREEN"
+num__liwc_nonflu,↓ num__session_duration_sec
+num__liwc_power,↓ num__hour_sin
+num__liwc_ppron,↓ num__app_System
+num__liwc_pronoun,↓ num__app_Audio_Entertainment
+num__liwc_relig,↓ num__hour_cos
+num__liwc_reward,↑ num__app_Audio_Entertainment
+num__liwc_swear,↑ num__hour_cos
+num__liwc_time,↓ num__hour_sin
+num__liwc_verb,"↑ num__hour_cos | ↓ num__hour_sin, num__app_Audio_Entertainment"
+num__liwc_we,↑ num__app_Audio_Entertainment
+num__music_track_acousticness,↑ num__session_duration_sec | ↓ num__hour_cos
+num__music_track_danceability,↑ num__hour_sin | ↓ num__hour_cos
+num__music_track_energy,"↑ num__hour_sin, num__hour_cos"
+num__music_track_instrumentalness,↑ num__phone_NOTIFICATION | ↓ num__hour_sin
+num__music_track_loudness,↑ num__hour_cos
+num__music_track_speechiness,↓ num__phone_NOTIFICATION
+num__music_track_valence,↓ num__session_duration_sec
+num__topic_Topic_13,"↓ num__hour_sin, num__hour_cos"
+num__topic_Topic_14,↑ num__app_Audio_Entertainment
+num__topic_Topic_15,↓ num__hour_cos
+num__topic_Topic_2,"↑ num__phone_NOTIFICATION, num__app_Audio_Entertainment, num__hour_sin | ↓ num__hour_cos"
+num__topic_Topic_22,↑ num__app_Audio_Entertainment
+num__topic_Topic_23,↑ num__hour_cos | ↓ num__hour_sin
+num__topic_Topic_25,↓ num__hour_cos
+num__topic_Topic_26,↑ num__app_Audio_Entertainment
+num__topic_Topic_29,↑ num__app_Audio_Entertainment | ↓ num__hour_cos
+num__topic_Topic_4,↑ num__phone_NOTIFICATION
+num__topic_Topic_6,↑ num__hour_cos
+num__topic_Topic_7,↑ num__screen_OFF_LOCKED
+num__topic_Topic_9,↓ num__hour_cos

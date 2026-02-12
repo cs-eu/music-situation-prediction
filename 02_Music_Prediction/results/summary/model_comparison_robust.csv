@@ -1,0 +1,6 @@
+target,feature,n_models,models,directions
+num__liwc_power,num__hour_sin,2,"ElasticNet, NeuralNet",negative
+num__music_track_acousticness,num__session_duration_sec,2,"ElasticNet, NeuralNet",positive
+num__music_track_danceability,num__hour_sin,2,"ElasticNet, NeuralNet",positive
+num__music_track_instrumentalness,num__hour_sin,2,"ElasticNet, NeuralNet",negative
+num__topic_Topic_9,num__hour_cos,2,"ElasticNet, NeuralNet",negative

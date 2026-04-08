@@ -1,0 +1,28 @@
+# Data config
+numeric_features: ["gps_lat", "gps_lon", "screen_state", "energy", "danceability"]
+categorical_features: ["location_type", "app_category"]
+target_column: "valence"
+
+# Model config
+transformer:
+  hidden_dim: 64
+  num_heads: 4
+  learning_rate: 1e-3
+
+gnn:
+  hidden_dim: 32
+  learning_rate: 1e-3
+
+# Logging config
+wandb:
+  project: "music_prediction"
+  entity: "your_wandb_team"
+
+dataset:
+  batch_size: 32
+  num_workers: 4
+  drop_features: ["timestamp"]  # Examples for all, drop here all Punctuation features from LUKE
+  numeric_features: ["gps_lat", "gps_lon", "screen_state", "energy", "danceability"]
+  categorical_features: ["location_type", "app_category"]
+  binary_features: []
+  pass_through_features: []

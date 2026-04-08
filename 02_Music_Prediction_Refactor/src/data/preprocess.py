@@ -12,10 +12,10 @@ class DataPreprocessor:
 
     def _build_preprocessor(self):
         """Build scikit-learn preprocessing pipeline."""
-        numeric_features = self.config["numeric_features"]
-        categorical_features = self.config["categorical_features"]
-        binary_features = self.config["binary_features"]
-        pass_through_features = self.config["pass_through_features"]
+        numeric_features = self.config.get("numeric_features", [])
+        categorical_features = self.config.get("categorical_features", [])
+        binary_features = self.config.get("binary_features", [])
+        pass_through_features = self.config.get("pass_through_features", [])
 
         numeric_pipeline = Pipeline(
             steps=[
@@ -44,11 +44,18 @@ class DataPreprocessor:
             ]
         )
         return preprocessor
+    
+    def _remove_features(self, X):
+        """Remove features specified in the config."""
+        drop_features = self.config.get("drop_features", [])
+        return X.drop(columns=drop_features, errors="ignore")
 
     def fit_transform(self, X):
         """Fit and transform the data."""
+        X = self._remove_features(X)
         return self.preprocessor.fit_transform(X)
 
     def transform(self, X):
         """Transform the data."""
+        X = self._remove_features(X)
         return self.preprocessor.transform(X)

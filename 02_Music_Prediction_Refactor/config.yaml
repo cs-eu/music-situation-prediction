@@ -18,6 +18,25 @@ wandb:
   project: "music_prediction"
   entity: "your_wandb_team"
 
+elastic_net:
+  max_iter: 10000
+  alpha_range:
+  l1_ratio_range: 
+  random_state: 42
+
+random_forest:
+  n_estimators: 200
+  max_features: "sqrt"
+  min_samples_leaf: 20
+  random_state: 42
+
+neural_net:
+  input_dim: 32
+  hidden_dims:
+  output_dim: 1 
+  dropout: 0.1
+  learning_rate: 1e-3
+
 dataset:
   batch_size: 32
   num_workers: 4

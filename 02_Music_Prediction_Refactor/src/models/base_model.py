@@ -3,7 +3,7 @@ import torch.nn as nn
 import lightning as L
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Tuple
-from metrics import calculate_metrics
+from utils import calculate_metrics
 
 class BaseModel(ABC):
     """Abstract base class for all models."""

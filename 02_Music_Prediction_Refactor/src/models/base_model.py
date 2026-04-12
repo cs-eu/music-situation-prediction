@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
+import lightning as L
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Tuple
 from metrics import calculate_metrics
@@ -8,8 +8,9 @@ from metrics import calculate_metrics
 class BaseModel(ABC):
     """Abstract base class for all models."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], wandb_logger=None):
         self.config = config
+        self.wandb_logger = wandb_logger
 
     @abstractmethod
     def fit(self, dataloader: torch.utils.data.DataLoader, **kwargs):
@@ -38,10 +39,10 @@ class BaseModel(ABC):
         return model
     
 
-class LightningBaseModel(pl.LightningModule, BaseModel):
+class LightningBaseModel(L.LightningModule, BaseModel):
 
-    def __init__(self, config: Dict[str, Any]):
-        pl.LightningModule.__init__(self)
+    def __init__(self, config: Dict[str, Any], wandb_logger=None):
+        L.LightningModule.__init__(self, wandb_logger)
         BaseModel.__init__(self, config)
 
     def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> torch.Tensor:
@@ -49,7 +50,7 @@ class LightningBaseModel(pl.LightningModule, BaseModel):
         x, y = batch
         y_hat = self(x) # TODO: check if this is correct and what does it actually do
         loss = nn.functional.mse_loss(y_hat, y)
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.wandb_logger.log_metrics({"train_loss": loss}, step=self.global_step)
         return loss
     
     def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> torch.Tensor:
@@ -57,7 +58,7 @@ class LightningBaseModel(pl.LightningModule, BaseModel):
         x, y = batch
         y_hat = self(x)
         loss = nn.functional.mse_loss(y_hat, y)
-        self.log("val_loss", loss, prog_bar=True)
+        self.wandb_logger.log_metrics({"val_loss": loss}, step=self.global_step)
         return loss
     
     def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> torch.Tensor:
@@ -65,7 +66,7 @@ class LightningBaseModel(pl.LightningModule, BaseModel):
         x, y = batch
         y_hat = self(x)
         loss = nn.functional.mse_loss(y_hat, y)
-        self.log("test_loss", loss, prog_bar=True)
+        self.wandb_logger.log_metrics({"test_loss": loss}, step=self.global_step)
         return loss
     
     def predict_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int):

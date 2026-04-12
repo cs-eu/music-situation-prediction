@@ -5,8 +5,8 @@ import torch.nn as nn
 
 class NeuralNet(LightningBaseModel):
 
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
+    def __init__(self, config: Dict[str, Any], wandb_logger=None):
+        super().__init__(config, wandb_logger)
 
         layers = []
         prev_dim = self.config.get("input_dim")

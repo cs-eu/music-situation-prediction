@@ -40,6 +40,8 @@ random_forest:
   random_state: 42
 
 neural_net:
+  max_epochs: 200
+  precision: "bf16"
   input_dim: 32
   hidden_dims:
   output_dim: 1 
@@ -49,6 +51,7 @@ neural_net:
 dataset:
   batch_size: 32
   num_workers: 4
+  groupsplit_column: "user_id"
   drop_features: ["timestamp"]  # Examples for all, drop here all Punctuation features from LUKE
   numeric_features: ["gps_lat", "gps_lon", "screen_state", "energy", "danceability"]
   categorical_features: ["location_type", "app_category"]

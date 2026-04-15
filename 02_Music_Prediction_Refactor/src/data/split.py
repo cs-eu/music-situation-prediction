@@ -7,7 +7,7 @@ class DataSplitter:
         self.val_size = val_size
         self.random_state = random_state
 
-    def group_split(self, df : pd.DataFrame, group_column : str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def group_split(self, df : pd.DataFrame, group_column : str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Split dataset into train and test set and block by group_column."""
         groups = df[group_column].values
         test_splitter = GroupShuffleSplit(

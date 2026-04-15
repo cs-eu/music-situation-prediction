@@ -4,6 +4,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import GroupShuffleSplit
 import pandas as pd
+import numpy as np
 
 class DataPreprocessor:
     def __init__(self, config):
@@ -12,10 +13,10 @@ class DataPreprocessor:
 
     def _build_preprocessor(self):
         """Build scikit-learn preprocessing pipeline."""
-        numeric_features = self.config.get("numeric_features", [])
-        categorical_features = self.config.get("categorical_features", [])
-        binary_features = self.config.get("binary_features", [])
-        pass_through_features = self.config.get("pass_through_features", [])
+        numeric_features = self.config["dataset"]["numeric_features"]
+        categorical_features = self.config["dataset"]["categorical_features"]
+        binary_features = self.config["dataset"]["binary_features"]
+        pass_through_features = self.config["dataset"]["pass_through_features"]
 
         numeric_pipeline = Pipeline(
             steps=[
@@ -45,17 +46,21 @@ class DataPreprocessor:
         )
         return preprocessor
     
-    def _remove_features(self, X):
+    def _remove_features(self, X: pd.DataFrame) -> pd.DataFrame:
         """Remove features specified in the config."""
-        drop_features = self.config.get("drop_features", [])
-        return X.drop(columns=drop_features, errors="ignore")
+        drop_features = self.config["dataset"]["drop_features"]
+        return X.drop(columns=drop_features)
 
-    def fit_transform(self, X):
+    def fit_transform(self, X: pd.DataFrame) -> np.ndarray:
         """Fit and transform the data."""
+        # print("BEFORE")
+        # print(X)
+        # print("AFTER")
+        # print(X)
         X = self._remove_features(X)
         return self.preprocessor.fit_transform(X)
 
-    def transform(self, X):
+    def transform(self, X: pd.DataFrame) -> np.ndarray:
         """Transform the data."""
         X = self._remove_features(X)
         return self.preprocessor.transform(X)

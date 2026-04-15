@@ -1,8 +1,3 @@
-# Data config
-numeric_features: ["gps_lat", "gps_lon", "screen_state", "energy", "danceability"]
-categorical_features: ["location_type", "app_category"]
-target_column: "valence"
-
 # Model config
 transformer:
   max_seq_len:
@@ -52,8 +47,8 @@ dataset:
   batch_size: 32
   num_workers: 4
   groupsplit_column: "user_id"
-  drop_features: ["timestamp"]  # Examples for all, drop here all Punctuation features from LUKE
-  numeric_features: ["gps_lat", "gps_lon", "screen_state", "energy", "danceability"]
-  categorical_features: ["location_type", "app_category"]
-  binary_features: []
-  pass_through_features: []
+  drop_features: ["liwc_AllPunc"]  # TODO: drop here all Punctuation features from LUKE
+  numeric_features: ["gps_count", "gps_first_latitude", "gps_first_longitude", "detected_STILL", "detected_WALKING", "detected_RUNNING", "detected_ON_BICYCLE", "detected_ON_FOOT", "detected_IN_VEHICLE", "detected_IN_ROAD_VEHICLE", "detected_IN_RAIL_VEHICLE", "detected_IN_FOUR_WHEELER_VEHICLE", "phone_APPS", "phone_GPS", "phone_NOTIFICATION", "phone_SCREEN", "app_Audio_Entertainment", "app_Career", "app_Communication", "app_Creativity", "app_Dating", "app_Finance", "app_Food", "app_Gaming", "app_Health", "app_Internet", "app_Knowledge", "app_News", "app_Orientation", "app_Photo", "app_Reading", "app_Security", "app_Settings", "app_Shopping", "app_Social_Media", "app_Spirituality", "app_System", "app_Time", "app_Tools", "app_Transportation", "app_Unknown", "app_Visual_Entertainment", "app_Weather", "screen_ON_UNLOCKED", "screen_OFF_UNLOCKED", "screen_OFF_LOCKED", "screen_ON_LOCKED", "screen_UNKNOWN", "music_track_danceability", "music_track_energy", "music_track_loudness", "music_track_mode_major", "music_track_speechiness", "music_track_acousticness", "music_track_instrumentalness", "music_track_liveness", "music_track_valence", "music_track_tempo", "music_track_non_music", "genius_fear", "genius_anger", "genius_trust", "genius_surprise", "genius_positive", "genius_negative", "genius_sadness", "genius_disgust", "genius_joy", "genius_anticipation", "genius_lyric_len", "topic_Topic_0", "topic_Topic_1", "topic_Topic_2", "topic_Topic_3", "topic_Topic_4", "topic_Topic_5", "topic_Topic_6", "topic_Topic_7", "topic_Topic_8", "topic_Topic_9", "topic_Topic_10", "topic_Topic_11", "topic_Topic_12", "topic_Topic_13", "topic_Topic_14", "topic_Topic_15", "topic_Topic_16", "topic_Topic_17", "topic_Topic_18", "topic_Topic_19", "topic_Topic_20", "topic_Topic_21", "topic_Topic_22", "topic_Topic_23", "topic_Topic_24", "topic_Topic_25", "topic_Topic_26", "topic_Topic_27", "topic_Topic_28", "topic_Topic_29", "liwc_WC", "liwc_Analytic", "liwc_Clout", "liwc_Authentic", "liwc_Tone", "liwc_WPS", "liwc_Sixltr", "liwc_Dic", "liwc_function.", "liwc_pronoun", "liwc_ppron", "liwc_i", "liwc_we", "liwc_you_total", "liwc_you_sing", "liwc_you_plur", "liwc_you_formal", "liwc_other", "liwc_shehe", "liwc_they", "liwc_ipron", "liwc_article", "liwc_prep", "liwc_auxverb", "liwc_adverb", "liwc_conj", "liwc_negate", "liwc_verb", "liwc_adj", "liwc_compare", "liwc_interrog", "liwc_number", "liwc_quant", "liwc_affect", "liwc_posemo", "liwc_negemo", "liwc_anx", "liwc_anger", "liwc_sad", "liwc_social", "liwc_family", "liwc_friend", "liwc_female", "liwc_male", "liwc_cogproc", "liwc_insight", "liwc_cause", "liwc_discrep", "liwc_tentat", "liwc_certain", "liwc_differ", "liwc_percept", "liwc_see", "liwc_hear", "liwc_feel", "liwc_bio", "liwc_body", "liwc_health", "liwc_sexual", "liwc_ingest", "liwc_drives", "liwc_affiliation", "liwc_achiev", "liwc_power", "liwc_reward", "liwc_risk", "liwc_focuspast", "liwc_focuspresent", "liwc_focusfuture", "liwc_relativ", "liwc_motion", "liwc_space", "liwc_time", "liwc_work", "liwc_leisure", "liwc_home", "liwc_money", "liwc_relig", "liwc_death", "liwc_informal", "liwc_swear", "liwc_netspeak", "liwc_assent", "liwc_nonflu", "liwc_filler", "liwc_Period", "liwc_Comma", "liwc_Colon", "liwc_SemiC", "liwc_QMark", "liwc_Exclam", "liwc_Dash", "liwc_Quote", "liwc_Apostro", "liwc_Parenth", "liwc_OtherP", "liwc_Emoji", "session_duration_sec", "hour_sin", "hour_cos", "dow_sin", "dow_cos"]
+  categorical_features: ["time_bin", "gps_landuse_type", "music_track_key"]
+  binary_features: ["gps_home", "gps_work", "headset_PLUGGED", "headset_UNPLUGGED", "phone_AIRPLANE", "phone_BATTERYSAVINGMODE", "phone_BLUETOOTH", "phone_CAMERA", "phone_CALENDAR", "phone_PHONE", "phone_POWER", "phone_SMS"]
+  pass_through_features: ["user_id"]

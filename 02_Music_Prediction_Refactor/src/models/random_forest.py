@@ -19,18 +19,18 @@ class RandomForestModel(BaseModel):
         """Fit Random Forest Regressor."""
         X, y = [], []
         for x_batch, y_batch in dataloader:
-            X.append(x_batch)
-            y.append(y_batch)
+            X.append(x_batch.detach().cpu().numpy())
+            y.append(y_batch.detach().cpu().numpy())
         
         X = np.concatenate(X, axis=0)
         y = np.concatenate(y, axis=0)
-        self.model.fit(X, y)
+        self.model.fit(X, y.ravel())
 
     def predict(self, dataloader: torch.utils.data.DataLoader) -> torch.Tensor:
         """Predict using Random Forest Regressor."""
         X = []
         for x_batch, _ in dataloader:
-            X.append(x_batch)
+            X.append(x_batch.detach().cpu().numpy())
 
         X = np.concatenate(X, axis=0)
         predictions = self.model.predict(X)

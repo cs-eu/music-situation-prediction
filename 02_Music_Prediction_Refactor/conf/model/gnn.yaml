@@ -1,0 +1,8 @@
+name: gnn
+hidden_dim: 64
+num_layers: 2
+dropout: 0.1
+learning_rate: 0.001
+weight_decay: 0.00001
+max_epochs: 50
+precision: 32-true

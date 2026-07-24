@@ -1,16 +1,27 @@
 from torch.utils.data import DataLoader, Dataset
 import torch
-import pandas as pd
 import numpy as np
-from typing import Dict, Any, Tuple
+from typing import Dict
 
-class SituationDataset:
+class SituationDataset(Dataset):
     """Dataset class for music situation prediction."""
     def __init__(self, data : np.ndarray, config: Dict[str, any]):
-        self.X = torch.tensor(data.drop([config["target_columns"]]).values, dtype=torch.float32)
-        self.y = torch.tensor(data[config["target_columns"]].values, dtype=torch.float32)
+        target_columns = config["target_columns"]
+        if isinstance(target_columns, str):
+            target_columns = [target_columns]
 
-    def __get_item__(self, index: int):
+        feature_columns = config.get("feature_columns")
+        if feature_columns is None:
+            excluded_columns = set(target_columns)
+            group_column = config.get("group_column")
+            if group_column:
+                excluded_columns.add(group_column)
+            feature_columns = [column for column in data.columns if column not in excluded_columns]
+
+        self.X = torch.tensor(data[feature_columns].values, dtype=torch.float32)
+        self.y = torch.tensor(data[target_columns].values, dtype=torch.float32)
+
+    def __getitem__(self, index: int):
         return self.X[index], self.y[index]
 
     def __len__(self):

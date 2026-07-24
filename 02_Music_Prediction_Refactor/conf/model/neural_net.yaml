@@ -1,0 +1,7 @@
+name: neural_net
+hidden_dims: [256, 128, 64]
+dropout: 0.1
+learning_rate: 0.001
+weight_decay: 0.00001
+max_epochs: 50
+precision: 32-true

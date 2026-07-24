@@ -1,11 +1,11 @@
 import torch
-import numpy as np
 from typing import Dict, Any
 from .base_model import BaseModel
 
 class BaselineModel(BaseModel):
 
-    def __init__(self):
+    def __init__(self, config: Dict[str, Any] | None = None):
+        super().__init__(config or {})
         self.mean = None
 
     def fit(self, dataloader: torch.utils.data.DataLoader, **kwargs):
@@ -17,5 +17,5 @@ class BaselineModel(BaseModel):
 
     def predict(self, dataloader: torch.utils.data.DataLoader, **kwargs):
         """Predict mean for all samples."""
-        length = len(dataloader)
-        return torch.stack([self.mean] * length)
+        length = len(dataloader.dataset)
+        return self.mean.unsqueeze(0).repeat(length, 1)

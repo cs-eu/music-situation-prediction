@@ -1,0 +1,5 @@
+name: elastic_net
+alpha: 1.0
+l1_ratio: 0.5
+max_iter: 10000
+random_state: 42

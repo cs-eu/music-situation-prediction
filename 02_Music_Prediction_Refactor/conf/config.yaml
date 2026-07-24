@@ -1,0 +1,25 @@
+defaults:
+  - model: baseline
+  - _self_
+
+run_name: null
+data_path: data/processed/preprocessed_features.csv
+group_column: pass__user_id
+target_prefixes:
+  - num__liwc_
+  - num__topic_
+  - num__genius_
+  - num__music_track_
+target_columns: null
+test_size: 0.1
+val_size: 0.0
+batch_size: 32
+num_workers: 4
+random_state: 42
+precision: 32-true
+accelerator: auto
+devices: auto
+output_dir: outputs/models
+
+wandb:
+  project: music_prediction

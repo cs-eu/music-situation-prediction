@@ -214,7 +214,10 @@ __marimo__/
 data*/
 mallet*/
 venv*/
+outputs*/
 lda30alpha001/
 *.env
+*.pt
+*.pth
 
 !02_Music_Prediction_Refactor/src/data/

@@ -186,6 +186,7 @@ class BaseTrainer:
             "baseline": ("models.baseline", "BaselineModel"),
             "elastic_net": ("models.elastic_net", "ElasticNetModel"),
             "random_forest": ("models.random_forest", "RandomForestModel"),
+            "tabpfn": ("models.tabpfn", "TabPFNModel"),
             "neural_net": ("models.neural_net", "NeuralNet"),
             "transformer": ("models.transformer", "TransformerModel"),
             "gnn": ("models.gnn", "GNNModel"),

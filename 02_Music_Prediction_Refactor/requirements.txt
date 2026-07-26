@@ -3,3 +3,4 @@ matplotlib
 lightning
 wandb
 torch
+tabpfn

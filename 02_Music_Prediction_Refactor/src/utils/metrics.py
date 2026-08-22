@@ -1,5 +1,5 @@
-import numpy as np
 import torch
+
 
 def RMSE(y_pred, y_true):
     """Root mean squared error."""

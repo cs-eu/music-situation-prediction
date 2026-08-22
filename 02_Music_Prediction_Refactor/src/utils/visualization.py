@@ -2,6 +2,7 @@ import matplotlib as plt
 import seaborn as sns
 import wandb
 
+
 def plot_attention(attention_weights, title="Attention Weights"):
     """Plot attention weights for transformer."""
     plt.figure(figsize=(10, 6))

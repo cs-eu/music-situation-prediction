@@ -1,11 +1,11 @@
-from .base_model import LightningBaseModel
-from typing import Dict, Any
 import torch
-import torch.nn as nn
+import torch as nn
+
+from .base_model import LightningBaseModel
+
 
 class NeuralNet(LightningBaseModel):
-
-    def __init__(self, config: Dict[str, Any], wandb_logger=None):
+    def __init__(self, config: dict[str, any], wandb_logger=None):
         super().__init__(config, wandb_logger)
 
         layers = []

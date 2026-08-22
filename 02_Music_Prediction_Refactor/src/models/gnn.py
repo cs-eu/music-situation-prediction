@@ -3,12 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv
-from typing import Dict, Any, Tuple
+
 from .base_model import LightningBaseModel
 
-class GNNModel(LightningBaseModel):
 
-    def __init__(self, config: Dict[str, Any]):
+class GNNModel(LightningBaseModel):
+    def __init__(self, config: dict[str, any]):
         super().__init__(config)
 
         # Define GNN layers
@@ -16,13 +16,21 @@ class GNNModel(LightningBaseModel):
         self.convs.append(GCNConv(self.config["input_dim"], self.config["hidden_dim"]))
 
         for _ in range(self.config["num_layers"] - 2):
-            self.convs.append(GCNConv(self.config["hidden_dim"], self.config["hidden_dim"]))
+            self.convs.append(
+                GCNConv(self.config["hidden_dim"], self.config["hidden_dim"])
+            )
 
         if self.config["num_layers"] > 1:
-            self.convs.append(GCNConv(self.config["hidden_dim"], self.config["hidden_dim"]))
-            self.output_layer = nn.Linear(self.config["hidden_dim"], self.config["output_dim"])
+            self.convs.append(
+                GCNConv(self.config["hidden_dim"], self.config["hidden_dim"])
+            )
+            self.output_layer = nn.Linear(
+                self.config["hidden_dim"], self.config["output_dim"]
+            )
         else:
-            self.output_layer = nn.Linear(self.config["hidden_dim"], self.config["output_dim"])
+            self.output_layer = nn.Linear(
+                self.config["hidden_dim"], self.config["output_dim"]
+            )
 
     def _create_graph_data(self, x: torch.Tensor) -> Data:
         """Create a graph data object from input features."""
@@ -51,11 +59,15 @@ class GNNModel(LightningBaseModel):
             x = conv(x, edge_index)
             if i < len(self.convs) - 1:
                 x = F.relu(x)
-                x = F.dropout(x, p=self.config.get("dropout", 0.1), training=self.training)
+                x = F.dropout(
+                    x, p=self.config.get("dropout", 0.1), training=self.training
+                )
 
         return self.output_layer(x)
 
-    def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(
+        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
+    ) -> torch.Tensor:
         """Training step for PyTorch Lightning."""
         x, y = batch
         data = self._create_graph_data(x.unsqueeze(1))  # Add dummy node dimension
@@ -64,7 +76,7 @@ class GNNModel(LightningBaseModel):
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
-    def predict_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int):
+    def predict_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         """Predict step for PyTorch Lightning."""
         x, _ = batch
         data = self._create_graph_data(x.unsqueeze(1))  # Add dummy node dimension

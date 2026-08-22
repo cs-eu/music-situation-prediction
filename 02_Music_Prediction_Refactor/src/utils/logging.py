@@ -1,5 +1,7 @@
-import wandb
 import os
+
+import wandb
+
 
 def setup_wandb(project_name, config, run_name=None):
     """Setup Weights and Biases logging."""

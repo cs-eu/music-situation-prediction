@@ -1,10 +1,10 @@
 import torch
-from typing import Dict, Any
+
 from .base_model import BaseModel
 
-class BaselineModel(BaseModel):
 
-    def __init__(self, config: Dict[str, Any] | None = None):
+class BaselineModel(BaseModel):
+    def __init__(self, config: dict[str, any] | None = None):
         super().__init__(config or {})
         self.mean = None
 

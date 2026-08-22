@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any, Dict
-
 import numpy as np
 import torch
 
@@ -9,7 +7,7 @@ from .base_model import BaseModel
 
 
 class TabPFNModel(BaseModel):
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, any]):
         super().__init__(config)
 
         try:
@@ -35,7 +33,9 @@ class TabPFNModel(BaseModel):
         y = np.concatenate(targets, axis=0).ravel()
         self.model.fit(X, y)
 
-    def predict(self, dataloader: torch.utils.data.DataLoader, **kwargs) -> torch.Tensor:
+    def predict(
+        self, dataloader: torch.utils.data.DataLoader, **kwargs
+    ) -> torch.Tensor:
         """Predict with TabPFN regressor."""
         features = []
 

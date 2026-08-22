@@ -1,10 +1,10 @@
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.compose import ColumnTransformer
-from sklearn.model_selection import GroupShuffleSplit
-import pandas as pd
 import numpy as np
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
 
 class DataPreprocessor:
     def __init__(self, config):
@@ -21,19 +21,17 @@ class DataPreprocessor:
         numeric_pipeline = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler())
+                ("scaler", StandardScaler()),
             ]
         )
         categorical_pipeline = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
+                ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
             ]
         )
         binary_pipeline = Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="most_frequent"))
-            ]
+            steps=[("imputer", SimpleImputer(strategy="most_frequent"))]
         )
 
         preprocessor = ColumnTransformer(
@@ -41,11 +39,11 @@ class DataPreprocessor:
                 ("num", numeric_pipeline, numeric_features),
                 ("cat", categorical_pipeline, categorical_features),
                 ("bin", binary_pipeline, binary_features),
-                ("pass", "passthrough", pass_through_features)
+                ("pass", "passthrough", pass_through_features),
             ]
         )
         return preprocessor
-    
+
     def _remove_features(self, X: pd.DataFrame) -> pd.DataFrame:
         """Remove features specified in the config."""
         drop_features = self.config["dataset"]["drop_features"]

@@ -11,6 +11,12 @@ class GNNModel(LightningBaseModel):
     def __init__(self, config: dict[str, any]):
         super().__init__(config)
 
+        # Validate required config parameters
+        required_keys = ["input_dim", "hidden_dim", "num_layers", "output_dim"]
+        for key in required_keys:
+            if key not in self.config:
+                raise ValueError(f"Missing required config parameter: '{key}'")
+
         # Define GNN layers
         self.convs = nn.ModuleList()
         self.convs.append(GCNConv(self.config["input_dim"], self.config["hidden_dim"]))

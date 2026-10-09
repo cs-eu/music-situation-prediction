@@ -259,7 +259,9 @@ class Trainer:
     def _get_model_config(self) -> dict[str, Any]:
         model_config = self._get_config_value(["model"], default={})
         if hasattr(model_config, "items"):
-            return dict(model_config)
+            # Use OmegaConf.to_container to properly convert ListConfig to list
+            from omegaconf import OmegaConf
+            return OmegaConf.to_container(model_config, resolve=True)
         return {}
 
     def _get_model_config_value(self, key: str, default: Any = None) -> Any:

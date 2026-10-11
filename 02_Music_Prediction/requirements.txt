@@ -1,6 +1,12 @@
-seaborn
-matplotlib
-lightning
-wandb
-torch
-tabpfn
+# Core tabular regression and raw RDS ingestion.
+numpy>=1.26
+pandas>=2.2
+scipy>=1.11
+scikit-learn>=1.4
+torch>=2.6
+joblib>=1.3
+pyreadr>=0.5
+hydra-core>=1.3.2
+omegaconf>=2.3
+# Optional backends/tools: install setup.py extras neural, tracking, plots,
+# explain, graph, lightgbm, tabpfn, or test, e.g. pip install -e '.[neural]'.

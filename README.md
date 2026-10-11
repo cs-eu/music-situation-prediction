@@ -34,15 +34,15 @@ Contains R scripts for extracting contextual and behavioral features from smartp
 - `utils/`: Helper functions for GPS processing, timestamp correction, and app session labeling
 
 ### 02_Music_Prediction/
-Contains Python notebooks for machine learning model training and interpretation:
+Contains the Python training application and regression models:
 
-- `00_preprocess_data.ipynb`: Data preprocessing pipeline (standardization, encoding, imputation)
-- `01_train_EN.ipynb`: Elastic-Net regression model training
-- `01_train_RF.ipynb`: Random Forest regression model training
-- `01_train_NN.ipynb`: Neural network model training
-- `02_interpretation.ipynb`: Model interpretation and feature importance analysis
-- `model/`: Saved model artifacts (organized by model type and target variable)
-- `results/`: Model performance metrics and interpretation summaries
+- `main.py`: Hydra entry point for training and evaluation
+- `conf/config.yaml` and `conf/model/`: Authoritative experiment and model configuration
+- `src/data/`: Raw-data loading, participant splitting, and fold-fitted preprocessing
+- `src/models/`: Mean baseline, Elastic-Net, Random Forest, boosting, and neural models
+- `src/training/`: Grouped tuning, validation-based neural stopping, evaluation, and complete predictor artifacts
+- `tests/`: Leakage, splitting, model, metric, and persistence regression tests
+- `outputs/models/`: Complete predictors, metrics, and experiment manifests
 
 ## Data Source
 
@@ -99,35 +99,43 @@ Music-related features are aggregated at the listening-window level:
 
 ### 4. Machine Learning Models
 
-Three supervised learning approaches are implemented to predict music features from situational contexts:
+Supervised regression predicts aggregated music attributes from the situational sensing features of a listening window. This is not track identification or a causal forecast at the start of a window: several contextual measurements are aggregated over that same window. Participant identities, other music attributes, and music-derived key encodings are never predictors.
 
 #### Elastic-Net Regression
 - Combines L1 (lasso) and L2 (ridge) penalties
 - Hyperparameters: regularization strength (α) and L1 ratio
-- Optimized via grid search with 5-fold user-blocked cross-validation
+- Regularization can be tuned by grid search with 5-fold participant-blocked cross-validation on development participants only
 - Provides interpretable sparse coefficient estimates
 
 #### Random Forest Regression
 - Ensemble of decision trees with bootstrap aggregation
 - Square-root feature subsampling
 - Regularization via minimum leaf size
-- Evaluated with 5-fold user-blocked cross-validation
+- Evaluated on held-out participants; optional parameter grids use participant-blocked cross-validation
 
 #### Neural Networks
-- Multi-layer perceptron with three hidden layers of decreasing width
+- Regularized tabular multi-layer perceptron
 - ReLU activations and dropout regularization
-- Optimized with AdamW optimizer and smooth L1 loss
+- Optimized with AdamW and an RMSE-aligned mean squared error loss
 - Early stopping and learning rate scheduling
 
 ### 5. Model Evaluation
 
-All models are evaluated using:
-- **User-blocked cross-validation**: Prevents information leakage across participants
-- **Performance metrics**: Root Mean Squared Error (RMSE) and R²
-- **Feature importance**: 
-  - Elastic-Net: Non-zero coefficients ranked by magnitude
-  - Random Forest & Neural Networks: Permutation feature importance
-- **Effect directions**: Estimated via partial dependence curves
+All models use participant-disjoint splits, with 20% of participants reserved for final testing and 10% for neural/boosting validation by default. These are participant fractions, not window fractions; listening activity is highly imbalanced across participants. Non-early-stopped classical models combine the remaining development partitions, and parameter grids are selected using grouped folds without looking at test outcomes. LightGBM and neural models retain separate validation participants for early stopping. Fixed classical models also report a pre-refit validation score. Test scoring is disabled by default and requires `evaluate_test=true` after development-based model selection. Selected CV and best-validation scores are selection scores, not unbiased final performance estimates or confidence intervals.
+
+- **Fold-safe preprocessing**: Feature imputation, category encoding, and feature/target scaling are learned from training observations only
+- **Observed outcomes only**: Missing target values are excluded per target, never imputed; targets with no training labels are explicitly recorded as skipped
+- **Original-unit metrics**: RMSE, MAE, R², participant-macro RMSE, and MSE skill relative to the training-mean baseline
+- **Neural validation**: Participant-disjoint early stopping and restoration of the best validation checkpoint
+- **Reproducibility**: Seeds, selected parameters, split counts, feature schema, library versions, source/split checksums, run identities, and resolved configuration are saved
+
+The supplied raw prediction artifact has 58,489 windows from 394 participants. Of its outcome columns, 117 continuous targets have observations and 33 LIWC targets are entirely missing. The legacy `preprocessed_features.csv` is unsuitable for unbiased evaluation: it was globally scaled and some target values were median-imputed before splitting. Training rejects that artifact; use the raw RDS or an untouched CSV instead. No model can guarantee perfect predictions of unseen participants' music choices.
+
+The supplied artifact also contains 149 windows that are identical across different participant IDs and a `liwc_anger` column that exactly duplicates `genius_anger`. Training logs and quarantines all ambiguous copies and that target, leaving 58,340 windows and 116 observed continuous targets; it does not alter the raw file. The extraction code is corrected, but existing corrupted aggregates cannot be repaired without regenerating them from the private source records. Performance measured on this artifact is therefore **provisional**, and undetected upstream contamination may remain. Calendar features follow the recorded timestamps; verify UTC/local clock provenance before interpreting them as local circadian effects. Current outcomes are unweighted means over matched unique tracks, not listening-time-weighted preferences.
+
+Corrected extraction writes `data/results/participant_safe_v2/features_all_windows_participant_safe_v2.rds` relative to its R working directory. Versioned checkpoints preserve skipped-window positions and validated progress; legacy intermediate files are not reused. Point training at the regenerated output with a `data_path` override instead of continuing to use the old combined artifact.
+
+The optional Transformer uses contextual-feature tokens rather than treating separate windows in a batch as a sequence. GNN training is disabled for this tabular dataset because no defensible graph or leakage-safe edges are supplied. TabPFN is optional and requires suitable hardware, explicit model-weight access, and a documented training-size policy; it is not a default full-data CPU model.
 
 ## Setup and Installation
 
@@ -149,10 +157,10 @@ install.packages(c(
 
 ### Python Dependencies
 
-Install required Python packages:
+For the prediction stage, install the authoritative stage-specific dependencies:
 
 ```bash
-pip install numpy pandas scikit-learn torch pyreadr matplotlib joblib
+python -m pip install -r 02_Music_Prediction/requirements.txt
 ```
 
 Or create a virtual environment:
@@ -160,8 +168,10 @@ Or create a virtual environment:
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r 02_Music_Prediction/requirements.txt
 ```
+
+The root `requirements.txt` describes the older enrichment/NLP environment. Use a separate environment for that stage rather than combining its legacy pins with the prediction dependencies.
 
 ### API Credentials
 
@@ -198,9 +208,34 @@ Update the working directory paths in the scripts:
    - Run scripts in order: `00_SOURCE_Databases.R` → `01_SOURCE_WindowExtract.R` → `02_precompute_GPS.R` → `03_SOURCE_FeatureExtract.R`
 
 3. **Model Training** (Stage 2):
-   - Preprocess data: `00_preprocess_data.ipynb`
-   - Train models: `01_train_EN.ipynb`, `01_train_RF.ipynb`, `01_train_NN.ipynb`
-   - Interpret results: `02_interpretation.ipynb`
+    - Run `02_Music_Prediction/main.py` using raw features; preprocessing is part of each training fold
+    - Select the model and targets through Hydra overrides
+    - Inspect saved metrics and manifests before interpreting fitted predictors
+
+### Prediction Commands
+
+Run these commands from the repository root:
+
+```bash
+# Honest reference predictor for a small target set.
+python 02_Music_Prediction/main.py model=baseline 'target_columns=[music_track_energy,music_track_valence]'
+
+# Group-tuned linear model; omit target_columns to train all available outcomes.
+python 02_Music_Prediction/main.py model=elastic_net 'target_columns=[music_track_energy,music_track_valence]'
+
+# Nonlinear tabular comparison.
+python 02_Music_Prediction/main.py model=random_forest 'target_columns=[music_track_energy,music_track_valence]'
+
+# Only after development-based model selection: opt in to final test scoring.
+python 02_Music_Prediction/main.py model=elastic_net 'target_columns=[music_track_energy,music_track_valence]' evaluate_test=true
+
+# Regression tests.
+python -m pytest 02_Music_Prediction/tests
+```
+
+Neural models require the optional `neural` installation extra, for example `python -m pip install -e './02_Music_Prediction[neural]'`. Optional external experiment logging is disabled by default; opt in with `wandb.mode=offline` or `wandb.mode=online`. Relative data/output paths resolve from `02_Music_Prediction`, not the shell working directory.
+
+Saved `.joblib` predictors include the fitted preprocessing, feature ordering, target scaler, model, data-quality flags, and run/source identity. The manifest lists only artifacts from its own run; older target files may remain in the output directory, so compare the predictor's `run_metadata["run_id"]` with the manifest before combining results. In a Python environment with `02_Music_Prediction` installed, load a **trusted** artifact with `joblib.load(path)` and call `predictor.predict(raw_context_frame)` to obtain predictions in the original target units. Never unpickle artifacts from untrusted sources.
 
 ### Running Individual Components
 
@@ -208,7 +243,7 @@ Each stage can be run independently if the required input data is available. The
 
 - Music enrichment expects: Track metadata (artist, title)
 - Feature extraction expects: Raw SSPS database tables
-- Model training expects: Preprocessed feature matrix (output from Stage 1 or `features_all_windows_combined.rds`)
+- Model training expects: Untransformed contextual features and observed music attributes from Stage 1, such as `features_all_windows_combined.rds`
 
 ## Data Privacy
 
@@ -216,11 +251,10 @@ Each stage can be run independently if the required input data is available. The
 
 ## Results
 
-Model results are saved in `02_Music_Prediction/results/`:
-- Performance metrics per target variable and model type
-- Feature importance rankings
-- Model interpretation summaries
-- Cross-validation results
+Model results are saved in `02_Music_Prediction/outputs/models/`:
+- `<model>_<target>.joblib`: Complete original-unit predictor
+- `<model>_metrics.json`: Development scores, any grouped tuning results, and opt-in test/baseline metrics
+- `<model>_manifest.json`: Configuration, versions, feature schema, split counts, and data-quality exclusions
 
 The models predict various music features from situational contexts, including:
 - Spotify audio features (valence, energy, danceability, etc.)

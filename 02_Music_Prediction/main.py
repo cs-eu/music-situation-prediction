@@ -30,19 +30,19 @@ def main(cfg: DictConfig):
         else "music_prediction"
     )
 
-    setup_wandb(
+    run = setup_wandb(
         project_name=project_name,
         config=config_dict,
         run_name=run_name,
     )
 
-    trainer = Trainer(cfg)
-    results = trainer.train()
-    print(OmegaConf.to_yaml(OmegaConf.create({"results": results})))
-
-    import wandb
-
-    wandb.finish()
+    try:
+        trainer = Trainer(cfg)
+        results = trainer.train()
+        print(OmegaConf.to_yaml(OmegaConf.create({"results": results})))
+    finally:
+        if run is not None:
+            run.finish()
 
 
 if __name__ == "__main__":

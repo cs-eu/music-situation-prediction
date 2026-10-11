@@ -1,65 +1,39 @@
+from typing import Any
+
 import torch
 import torch.nn as nn
 
-from .base_model import LightningBaseModel
-
-
-class PositionalEncoding(nn.Module):
-    """Positional Encoding for Transformer Models."""
-
-    def __init__(self, d_model: int, max_len: int = 5000):
-        super().__init__()
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float()
-            * (-torch.log(torch.tensor(10000.0)) / d_model)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)
-        self.register_buffer("pe", pe)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + self.pe[:, : x.size(1)]
+from .lightning_base import LightningBaseModel
 
 
 class TransformerModel(LightningBaseModel):
-    def __init__(self, config: dict[str, any]):
+    """Attention across feature tokens within each independent tabular window."""
+
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
-
-        # Input embedding layer
-        self.embedding = nn.Linear(self.config["input_dim"], self.config["d_model"])
-        self.pos_encoder = PositionalEncoding(
-            self.config["d_model"], self.config["max_seq_len"]
-        )
-
-        # Transformer encoder
-        encoder_layers = nn.TransformerEncoderLayer(
-            d_model=self.config["d_model"],
-            nhead=self.config["nhead"],
-            dropout=self.config.get("dropout", 0.1),
+        self.input_dim = self.config["input_dim"]
+        d_model = self.config.get("d_model", 32)
+        nhead = self.config.get("nhead", 4)
+        if self.input_dim <= 0 or d_model <= 0 or nhead <= 0 or d_model % nhead:
+            raise ValueError("input_dim must be positive and d_model must be divisible by nhead.")
+        if self.config.get("output_dim", 1) != 1:
+            raise ValueError("TransformerModel learns one regression target at a time (output_dim=1).")
+        self.value_embedding = nn.Linear(1, d_model)
+        self.feature_embedding = nn.Parameter(torch.empty(self.input_dim, d_model))
+        nn.init.normal_(self.feature_embedding, std=0.02)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=nhead,
+            dim_feedforward=self.config.get("dim_feedforward", 128),
+            dropout=self.config.get("dropout", 0.1), batch_first=True,
         )
         self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layers, num_layers=self.config["num_layers"]
+            encoder_layer, num_layers=self.config.get("num_layers", 2), enable_nested_tensor=False,
         )
-
-        # Output layer
-        self.output_layer = nn.Linear(self.config["d_model"], self.config["output_dim"])
+        self.output_layer = nn.Linear(d_model, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the transformer model."""
-        # x shape: (batch_size, seq_len, input_dim) or (batch_size, input_dim)
-        if x.dim() == 2:
-            x = x.unsqueeze(1)  # Add sequence dimension if not present
-
-        # Embed and add positional encoding
-        x = self.embedding(x)
-        x = self.pos_encoder(x)
-
-        # Transformer
-        x = self.transformer_encoder(x)
-
-        # Average over sequence dimension and project to output
-        x = x.mean(dim=1)
-        return self.output_layer(x)
+        if x.ndim != 2 or x.shape[1] != self.input_dim:
+            raise ValueError("TransformerModel expects tabular [rows, input_dim], not a fabricated sequence.")
+        tokens = self.value_embedding(x.unsqueeze(-1)) + self.feature_embedding.unsqueeze(0)
+        tokens = self.transformer_encoder(tokens)
+        return self.output_layer(tokens.mean(dim=1))

@@ -1,6 +1,8 @@
-import numpy as np
+from typing import Any
+
 import torch
 from sklearn.linear_model import ElasticNet
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from .base_model import BaseModel
@@ -9,17 +11,14 @@ from .base_model import BaseModel
 class ElasticNetModel(BaseModel):
     def __init__(
         self,
-        config: dict[str, any],
+        config: dict[str, Any],
         alpha: float | None = None,
         l1_ratio: float | None = None,
     ):
         super().__init__(config)
-        
-        self.scaler = StandardScaler()
-
         resolved_alpha = alpha if alpha is not None else self.config.get("alpha")
         if resolved_alpha is None:
-            resolved_alpha = 0.01  # Lowered from 1.0
+            resolved_alpha = 0.01
 
         resolved_l1_ratio = (
             l1_ratio if l1_ratio is not None else self.config.get("l1_ratio")
@@ -27,7 +26,7 @@ class ElasticNetModel(BaseModel):
         if resolved_l1_ratio is None:
             resolved_l1_ratio = 0.5
 
-        self.model = ElasticNet(
+        estimator = ElasticNet(
             alpha=resolved_alpha,
             l1_ratio=resolved_l1_ratio,
             max_iter=self.config.get("max_iter", 10000),
@@ -35,29 +34,18 @@ class ElasticNetModel(BaseModel):
             tol=self.config.get("tol", 1e-4),
             warm_start=self.config.get("warm_start", False),
         )
+        self.model = Pipeline([
+            ("scaler", StandardScaler() if self.config.get("standardize", True) else "passthrough"),
+            ("regressor", estimator),
+        ])
 
     def fit(self, dataloader: torch.utils.data.DataLoader, **kwargs):
-        """Fit the model with feature scaling."""
-        X, y = [], []
-        for x_batch, y_batch in dataloader:
-            X.append(x_batch.detach().cpu().numpy())
-            y.append(y_batch.detach().cpu().numpy())
-
-        X = np.concatenate(X, axis=0)
-        y = np.concatenate(y, axis=0)
-        
-        # Scale features
-        X_scaled = self.scaler.fit_transform(X)
-        self.model.fit(X_scaled, y.ravel())
+        """Keep fitted scaling and coefficients in a single saved estimator."""
+        X, y = self._loader_arrays(dataloader)
+        self.model.fit(X, y)
+        return self
 
     def predict(self, dataloader, **kwargs) -> torch.Tensor:
         """Predict using the elastic net model with scaled features."""
-        X = []
-        for x_batch, _ in dataloader:
-            X.append(x_batch.detach().cpu().numpy())
-        X = np.concatenate(X, axis=0)
-        
-        # Scale features using the fitted scaler
-        X_scaled = self.scaler.transform(X)
-        predictions = self.model.predict(X_scaled)
-        return torch.tensor(predictions, dtype=torch.float32)
+        X, _ = self._loader_arrays(dataloader, require_targets=False)
+        return torch.as_tensor(self.model.predict(X), dtype=torch.float32).reshape(-1, 1)

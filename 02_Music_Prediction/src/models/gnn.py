@@ -1,154 +1,85 @@
+from typing import Any
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.data import Data
-from torch_geometric.nn import GCNConv
 
-from .base_model import LightningBaseModel
+from .lightning_base import LightningBaseModel
 
 
 class GNNModel(LightningBaseModel):
-    def __init__(self, config: dict[str, any]):
+    """Optional graph regressor; tabular situational windows are not graphs."""
+
+    def __init__(self, config: dict[str, Any]):
+        if not config.get("graph_input", False):
+            raise ValueError(
+                "GNN is unsupported by the tabular music-prediction pipeline: it does not construct graphs. "
+                "Use neural_net, transformer, elastic_net, random_forest or lightgbm. "
+                "Graph-specific consumers may set graph_input=True and provide PyG Data/Batch objects "
+                "with explicit x, edge_index, batch (for graph-level regression), and y."
+            )
         super().__init__(config)
+        try:
+            from torch_geometric.data import Data
+            from torch_geometric.nn import GCNConv, global_mean_pool
+        except ImportError as exc:
+            raise ImportError("GNN requires the optional 'graph' extra: pip install -e '.[graph]'.") from exc
+        self._data_type = Data
+        self._pool = global_mean_pool
+        hidden_dim = self.config.get("hidden_dim", 64)
+        num_layers = self.config.get("num_layers", 2)
+        if num_layers < 1:
+            raise ValueError("GNN num_layers must be at least one.")
+        if self.config.get("output_dim", 1) != 1:
+            raise ValueError("GNN learns one regression target at a time (output_dim=1).")
+        self.convs = nn.ModuleList([
+            GCNConv(self.config["input_dim"] if i == 0 else hidden_dim, hidden_dim)
+            for i in range(num_layers)
+        ])
+        self.output_layer = nn.Linear(hidden_dim, 1)
 
-        # Validate required config parameters
-        required_keys = ["input_dim", "hidden_dim", "num_layers", "output_dim"]
-        for key in required_keys:
-            if key not in self.config:
-                raise ValueError(f"Missing required config parameter: '{key}'")
-
-        # Define GNN layers
-        self.convs = nn.ModuleList()
-        self.convs.append(GCNConv(self.config["input_dim"], self.config["hidden_dim"]))
-
-        for _ in range(self.config["num_layers"] - 2):
-            self.convs.append(
-                GCNConv(self.config["hidden_dim"], self.config["hidden_dim"])
-            )
-
-        if self.config["num_layers"] > 1:
-            self.convs.append(
-                GCNConv(self.config["hidden_dim"], self.config["hidden_dim"])
-            )
-            self.output_layer = nn.Linear(
-                self.config["hidden_dim"], self.config["output_dim"]
-            )
-        else:
-            self.output_layer = nn.Linear(
-                self.config["hidden_dim"], self.config["output_dim"]
-            )
-
-    def _create_graph_data(self, x: torch.Tensor) -> Data:
-        """Create a graph data object from input features.
-        
-        Args:
-            x: Input tensor of shape (batch_size, feature_dim) or (batch_size, num_nodes, feature_dim)
-            
-        Returns:
-            Data object with node features and edges
-        """
-        # Handle 3D input (batch_size, num_nodes, feature_dim) -> flatten to (total_nodes, feature_dim)
-        if x.dim() == 3:
-            batch_size, num_nodes, feature_dim = x.shape
-            x_flat = x.view(-1, feature_dim)  # (batch_size * num_nodes, feature_dim)
-        else:
-            # Treat as single node per sample
-            batch_size = x.shape[0]
-            feature_dim = x.shape[1]
-            num_nodes = 1
-            x_flat = x
-
-        # Create a simple graph: connect each node to a few neighbors
-        # For single-node-per-sample case, create a self-loop
-        if num_nodes == 1:
-            # Self-loop for each sample
-            edge_index = torch.arange(batch_size, dtype=torch.long, device=x.device).repeat(2, 1)
-        else:
-            # Create fully connected graph within each sample
-            edge_indices = []
-            for i in range(batch_size):
-                start_idx = i * num_nodes
-                end_idx = (i + 1) * num_nodes
-                # Get node indices for this sample
-                nodes_in_sample = torch.arange(start_idx, end_idx, dtype=torch.long, device=x.device)
-                # Create all edges within the sample (fully connected)
-                if num_nodes > 1:
-                    edges = torch.combinations(nodes_in_sample, 2).t()
-                    # Add reverse edges for undirected graph
-                    edges = torch.cat([edges, edges.flip(0)], dim=1)
-                else:
-                    # Self-loop
-                    edges = torch.stack([nodes_in_sample, nodes_in_sample])
-                edge_indices.append(edges)
-            
-            edge_index = torch.cat(edge_indices, dim=1)
-        
-        # Validate edge_index
-        assert edge_index.shape[0] == 2, f"Edge index must have shape [2, num_edges], got {edge_index.shape}"
-        assert edge_index.dtype == torch.long, f"Edge index must be torch.long, got {edge_index.dtype}"
-        assert edge_index.min() >= 0, "Edge index has negative indices"
-        assert edge_index.max() < x_flat.shape[0], f"Edge index out of bounds: max={edge_index.max()}, num_nodes={x_flat.shape[0]}"
-        assert edge_index.shape[1] > 0, "Edge index is empty"
-        
-        return Data(x=x_flat, edge_index=edge_index)
-
-    def forward(self, data: Data) -> torch.Tensor:
-        """Forward pass of the GNN model."""
-        x, edge_index = data.x, data.edge_index
-
-        for i, conv in enumerate(self.convs):
-            x = conv(x, edge_index)
-            if i < len(self.convs) - 1:
-                x = F.relu(x)
-                x = F.dropout(
-                    x, p=self.config.get("dropout", 0.1), training=self.training
-                )
-
+    def forward(self, data) -> torch.Tensor:
+        if not isinstance(data, self._data_type) or data.x is None or data.edge_index is None:
+            raise ValueError("GNN requires explicit PyG Data/Batch node features and edges, not tabular tensors.")
+        x = data.x
+        for conv in self.convs:
+            x = F.dropout(F.relu(conv(x, data.edge_index)),
+                          p=self.config.get("dropout", 0.1), training=self.training)
+        if self.config.get("graph_level", True):
+            batch = getattr(data, "batch", None)
+            if batch is None:
+                batch = torch.zeros(len(x), dtype=torch.long, device=x.device)
+            x = self._pool(x, batch)
         return self.output_layer(x)
 
-    def training_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
-        """Training step for PyTorch Lightning."""
-        x, y = batch
-        data = self._create_graph_data(x)
-        y_hat = self(data)
-        # Match output shape to target shape
-        y_hat = y_hat[:y.shape[0]]
-        loss = F.mse_loss(y_hat.view_as(y), y)
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
-        return loss
+    def _regression_step(self, batch, stage):
+        if not isinstance(batch, self._data_type) or batch.y is None:
+            raise ValueError("GNN training requires explicit PyG Data/Batch objects with observed y.")
+        return super()._regression_step((batch, batch.y), stage)
 
-    def validation_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
-        """Validation step for PyTorch Lightning."""
-        x, y = batch
-        data = self._create_graph_data(x)
-        y_hat = self(data)
-        # Match output shape to target shape
-        y_hat = y_hat[:y.shape[0]]
-        loss = F.mse_loss(y_hat.view_as(y), y)
-        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        return loss
+    def predict_step(self, batch, batch_idx):
+        return self(batch)
 
-    def test_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
-        """Test step for PyTorch Lightning."""
-        x, y = batch
-        data = self._create_graph_data(x)
-        y_hat = self(data)
-        # Match output shape to target shape
-        y_hat = y_hat[:y.shape[0]]
-        loss = F.mse_loss(y_hat.view_as(y), y)
-        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        return loss
+    def predict(self, dataloader, **kwargs):
+        was_training = self.training
+        self.eval()
+        try:
+            with torch.inference_mode():
+                predictions = []
+                for data in dataloader:
+                    if not isinstance(data, self._data_type):
+                        raise ValueError("GNN prediction requires explicit PyG Data/Batch, not tabular batches.")
+                    predictions.append(self(data.to(self.device)).cpu())
+        finally:
+            self.train(was_training)
+        return torch.cat(predictions) if predictions else torch.empty((0, 1))
 
-    def predict_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int):
-        """Predict step for PyTorch Lightning."""
-        x, _ = batch
-        data = self._create_graph_data(x)
-        y_hat = self(data)
-        # Return only predictions for actual samples
-        return y_hat[:x.shape[0]]
+    def evaluate(self, dataloader):
+        from utils.metrics import calculate_metrics
+
+        batches = list(dataloader)
+        if not batches or any(not isinstance(data, self._data_type) or data.y is None for data in batches):
+            raise ValueError("GNN evaluation requires explicit PyG Data/Batch with observed targets.")
+        predictions = self.predict(batches).reshape(-1)
+        targets = torch.cat([data.y.detach().cpu().reshape(-1) for data in batches])
+        return {name: float(value) for name, value in calculate_metrics(predictions, targets).items()}

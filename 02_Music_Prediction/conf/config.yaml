@@ -1,25 +1,37 @@
 defaults:
-  - model: baseline
+  - model: elastic_net
   - _self_
 
 run_name: null
-data_path: data/processed/preprocessed_features.csv
-group_column: pass__user_id
+data_path: data/raw/features_all_windows_combined.rds
+group_column: user_id
 target_prefixes:
-  - num__liwc_
-  - num__topic_
-  - num__genius_
-  - num__music_track_
+  - liwc_
+  - topic_
+  - genius_
+  - music_track_
 target_columns: null
-test_size: 0.1
-val_size: 0.0
-batch_size: 32
-num_workers: 4
+test_size: 0.2
+val_size: 0.1
+batch_size: 256
+num_workers: 0
+cpu_threads: 4
 random_state: 42
 precision: 32-true
 accelerator: auto
-devices: auto
+devices: 1
+progress_bar: false
+evaluate_test: false
 output_dir: outputs/models
+
+dataset:
+  drop_features: []
+
+tuning:
+  enabled: true
+  cv_folds: 5
+  param_grid: {}
 
 wandb:
   project: music_prediction
+  mode: disabled

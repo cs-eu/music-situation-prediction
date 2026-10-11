@@ -1,4 +1,4 @@
-import matplotlib as plt
+import matplotlib.pyplot as plt
 import seaborn as sns
 import wandb
 
@@ -8,7 +8,8 @@ def plot_attention(attention_weights, title="Attention Weights"):
     plt.figure(figsize=(10, 6))
     sns.heatmap(attention_weights, cmap="viridis")
     plt.title(title)
-    wandb.log({f"{title}": wandb.Image(plt)})
+    if wandb.run is not None:
+        wandb.log({title: wandb.Image(plt)})
     plt.close()
 
 def plot_shap(shap_values, features, title="SHAP values"):
@@ -16,5 +17,6 @@ def plot_shap(shap_values, features, title="SHAP values"):
     plt.figure(figsize=(10, 6))
     sns.barplot(x=shap_values, y=features)
     plt.title(title)
-    wandb.log({f"{title}": wandb.Image(plt)})
+    if wandb.run is not None:
+        wandb.log({title: wandb.Image(plt)})
     plt.close()

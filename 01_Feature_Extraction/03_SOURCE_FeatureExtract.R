@@ -102,18 +102,42 @@ detected_activity_keys <- c("STILL", "WALKING", "RUNNING", "ON_BICYCLE", "ON_FOO
 all_activity_names <- c("AIRPLANE", "APPS", "BATTERYSAVINGMODE", "BLUETOOTH", "CAMERA", "CALENDAR", "GPS", "NOTIFICATION", "PHONE", "POWER", "SCREEN", "SMS")
 gps_features <- c("gps_count",  "gps_first_latitude",  "gps_first_longitude",  "gps_landuse_type",  "gps_home",  "gps_work")
 
-spotify_numeric_features <- c("track_danceability", "track_energy", "track_key", "track_loudness", "track_mode_major", "track_speechiness", "track_acousticness", "track_instrumentalness", "track_liveness", "track_valence", "track_tempo", "track_non_music")
+# Musical key is categorical and must not be averaged as a numeric outcome.
+spotify_numeric_features <- c("track_danceability", "track_energy", "track_loudness", "track_mode_major", "track_speechiness", "track_acousticness", "track_instrumentalness", "track_liveness", "track_valence", "track_tempo", "track_non_music")
 genius_numeric_features <- c("fear", "anger", "trust", "surprise", "positive", "negative", "sadness", "disgust", "joy", "anticipation", "lyric_len")
 topic_numeric_features <- paste0("Topic ", 0:29)
 liwc_numeric_features <- c("WC", "Analytic", "Clout", "Authentic", "Tone", "WPS", "Sixltr", "Dic", "function.", "pronoun", "ppron", "i", "we", "you_total", "you_sing", "you_plur", "you_formal", "other", "shehe", "they", "ipron", "article", "prep", "auxverb", "adverb", "conj", "negate", "verb", "adj", "compare", "interrog", "number", "quant", "affect", "posemo", "negemo", "anx", "anger", "sad", "social", "family", "friend", "female", "male", "cogproc", "insight", "cause", "discrep", "tentat", "certain", "differ", "percept", "see", "hear", "feel", "bio", "body", "health", "sexual", "ingest", "drives", "affiliation", "achiev", "power", "reward", "risk", "focuspast", "focuspresent", "focusfuture", "relativ", "motion", "space", "time", "work", "leisure", "home", "money", "relig", "death", "informal", "swear", "netspeak", "assent", "nonflu", "filler", "AllPunc", "Period", "Comma", "Colon", "SemiC", "QMark", "Exclam", "Dash", "Quote", "Apostro", "Parenth", "OtherP", "Emoji")
 
 message("Pre-joining all music feature tables into a master table...")
 
-# Join all lyrics features together on their common key
-lyrics_features_all <- genius_features[topic_features, on = "track_spotify_id"][liwc_features, on = "track_spotify_id"]
+# Namespace independent families before joining, especially Genius/LIWC anger.
+spotify_feature_cols <- intersect(spotify_numeric_features, names(spotify_data))
+setnames(spotify_data, spotify_feature_cols, paste0("music_", spotify_feature_cols))
+for (family in c("genius", "topic", "liwc")) {
+  table_name <- paste0(family, "_features")
+  features <- get(table_name)
+  features <- features[!is.na(track_spotify_id) & nzchar(track_spotify_id)]
+  if (anyDuplicated(features, by = "track_spotify_id")) {
+    stop(sprintf("%s must contain one row per track_spotify_id", table_name))
+  }
+  feature_cols <- setdiff(names(features), "track_spotify_id")
+  prefixed_cols <- paste0(family, "_", feature_cols)
+  if (family == "topic") prefixed_cols <- gsub("\\s+", "_", trimws(prefixed_cols))
+  setnames(features, feature_cols, prefixed_cols)
+  assign(table_name, features)
+}
+spotify_numeric_features <- paste0("music_", spotify_numeric_features)
+genius_numeric_features <- paste0("genius_", genius_numeric_features)
+topic_numeric_features <- paste0("topic_", gsub("\\s+", "_", trimws(topic_numeric_features)))
+liwc_numeric_features <- paste0("liwc_", liwc_numeric_features)
 
-# Now, join the complete lyrics data with the Spotify audio feature data
-music_features_master <- spotify_data[lyrics_features_all, on = "track_spotify_id"]
+# Spotify is the authoritative track table: missing lyrics must not drop audio.
+music_features_master <- genius_features[spotify_data, on = "track_spotify_id"]
+music_features_master <- topic_features[music_features_master, on = "track_spotify_id"]
+music_features_master <- liwc_features[music_features_master, on = "track_spotify_id"]
+if (anyDuplicated(music_features_master, by = c("track", "artist"))) {
+  stop("Music features must contain one row per track/artist for unweighted track means")
+}
 
 # Pre-calculate the numeric column names ONCE, instead of inside the loop
 spotify_numeric_cols <- intersect(spotify_numeric_features, names(music_features_master))
@@ -145,7 +169,19 @@ ensure_cols <- function(dt, col_names, fill = 0) {
   return(dt)
 }
 
-extract_features_for_window <- function(user_id, start_time, end_time) {
+extract_features_for_window <- function(uid, window_start, window_end, screen_lookback_seconds = 7200) {
+  if (length(uid) != 1L || is.na(uid) ||
+      length(window_start) != 1L || length(window_end) != 1L ||
+      is.na(window_start) || is.na(window_end)) return(NULL)
+  if (!inherits(window_start, "POSIXt") || !inherits(window_end, "POSIXt")) {
+    stop("Window timestamps must be POSIXt; parse them with an explicit source timezone")
+  }
+  window_seconds <- as.numeric(difftime(window_end, window_start, units = "secs"))
+  if (!is.finite(window_seconds) || window_seconds <= 0) return(NULL)
+  if (length(screen_lookback_seconds) != 1L || !is.numeric(screen_lookback_seconds) ||
+      !is.finite(screen_lookback_seconds) || screen_lookback_seconds < 0) {
+    stop("screen_lookback_seconds must be a finite nonnegative number")
+  }
   # Start total timer
   t0 <- Sys.time()
   
@@ -157,20 +193,23 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
   
   # --- 1. Filter activity data ---
   t1 <- Sys.time()
-  acts <- activity_data_raw[user_id == user_id & timestamp %between% c(start_time, end_time)]
+  acts <- activity_data_raw[user_id == uid & timestamp %between% c(window_start, window_end)]
   time_log("Activity filtering", t1)
   if (nrow(acts) == 0) return(NULL)
   
   # --- 2. Time Bin ---
   t1 <- Sys.time()
-  time_bin <- get_time_bin(start_time)
+  time_bin <- get_time_bin(window_start)
   time_log("Time bin assignment", t1)
   
   # --- 3. GPS / Landuse ---
   t1 <- Sys.time()
-  gps_row <- gps_landuse_df[user_id == row$user_id &
-                              start_time <= row$end_time &
-                              end_time >= row$start_time]
+  gps_row <- gps_landuse_df[user_id == uid &
+                             start_time == window_start &
+                             end_time == window_end]
+  if (nrow(gps_row) > 1L) {
+    stop(sprintf("Multiple GPS rows for user %s at %s", uid, window_start))
+  }
   if (nrow(gps_row) == 0) {
     gps_features <- data.table(
       gps_count = 0,
@@ -264,7 +303,12 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
   
   # --- 7. Screen State ---
   t1 <- Sys.time()
-  screen_state_durations <- preprocessing_screen_window(acts, start_time, end_time)
+  screen_acts <- activity_data_raw[user_id == uid & activityName == "SCREEN" &
+                                   timestamp >= window_start - screen_lookback_seconds &
+                                   timestamp <= window_end]
+  screen_state_durations <- preprocessing_screen_window(
+    screen_acts, window_start, window_end, lookback_seconds = screen_lookback_seconds
+  )
   if (is.null(screen_state_durations) || nrow(screen_state_durations) == 0) {
     screen_state_summary <- data.table(matrix(0, nrow = 1, ncol = length(screen_categories)))
     setnames(screen_state_summary, screen_categories)
@@ -288,7 +332,7 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
   all_matched_features <- music_features_master[music_window, on = .(track = title, artist = artist), nomatch = 0]
   if (nrow(all_matched_features) == 0) return(NULL)
   
-  # Calculate means
+  # Preserve equal weighting of unique title/artist tracks, not play counts/duration.
   spotify_means <- all_matched_features[, lapply(.SD, mean, na.rm = TRUE), .SDcols = spotify_numeric_cols]
   genius_means  <- all_matched_features[, lapply(.SD, mean, na.rm = TRUE), .SDcols = genius_numeric_cols]
   topic_means   <- all_matched_features[, lapply(.SD, mean, na.rm = TRUE), .SDcols = topic_numeric_cols]
@@ -299,11 +343,6 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
   topic_means   <- ensure_cols(topic_means,   topic_numeric_features,   fill = NA_real_)
   liwc_means    <- ensure_cols(liwc_means,    liwc_numeric_features,    fill = NA_real_)
   
-  # Add prefixes to column names
-  setnames(spotify_means, paste0("music_", names(spotify_means)))
-  setnames(genius_means, paste0("genius_", names(genius_means)))
-  setnames(topic_means, paste0("topic_", gsub("\\s+", "_", trimws(names(topic_means)))))
-  setnames(liwc_means, paste0("liwc_", names(liwc_means)))
   time_log("Music features", t1)
   
   # --- 9. Combine All Features ---
@@ -322,14 +361,15 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
     if (nrow(feature_tables_to_check[[tbl_name]]) != 1) {
       warning(sprintf(
         "VALIDATION FAILED: Feature table '%s' for user %s at %s has %d rows (expected 1). Skipping window to prevent NAs.",
-        tbl_name, user_id, start_time, nrow(feature_tables_to_check[[tbl_name]])
+        tbl_name, uid, window_start, nrow(feature_tables_to_check[[tbl_name]])
       ))
+      return(NULL)
     }
   }
   
   time_log("Feature table validation", t1)
   final_features <- cbind(
-    data.table(user_id = user_id, start_time = start_time, end_time = end_time, time_bin = time_bin),
+    data.table(user_id = uid, start_time = window_start, end_time = window_end, time_bin = time_bin),
     gps_features,
     headset_summary,
     detected_activity_summary,
@@ -344,50 +384,87 @@ extract_features_for_window <- function(user_id, start_time, end_time) {
   time_log("Final combine", t1)
 
   total_dt <- round(as.numeric(difftime(Sys.time(), t0, units = "secs")), 3)
-  message(sprintf("Window processed for user %s (%.3f sec total)", user_id, total_dt))
+  message(sprintf("Window processed for user %s (%.3f sec total)", uid, total_dt))
   
   return(final_features)
 }
 
 # --- 10. Main Execution Block ---
-offset <- 0
-output_file <- "data/results/new/features_all_windows_optimized.rds"
-window_indices <- seq((offset + 1), nrow(music_windows))
+offset <- 0L
+checkpoint_schema_version <- 2L
+output_dir <- "data/results/participant_safe_v2"
+output_file <- file.path(output_dir, "features_all_windows_participant_safe_v2.rds")
+checkpoint_file <- file.path(output_dir, "features_checkpoint_v2.rds")
+if (length(offset) != 1L || !is.numeric(offset) || !is.finite(offset) ||
+    offset < 0 || offset != floor(offset) || offset > nrow(music_windows)) {
+  stop("offset must be an integer between zero and the number of music windows")
+}
+if (!dir.exists(output_dir) && !dir.create(output_dir, recursive = TRUE)) {
+  stop(sprintf("Cannot create output directory: %s", output_dir))
+}
+window_indices <- seq_len(nrow(music_windows))
+window_indices <- window_indices[window_indices > offset]
+window_keys <- as.data.frame(music_windows[window_indices, .(user_id, start_time, end_time)])
 
 message(sprintf("Starting sequential feature extraction for %d windows...", length(window_indices)))
 
-# Load previous intermediate results if any
-intermediate_files <- list.files("data/new/results", pattern = "^features_partial_\\d+\\.rds$", full.names = TRUE)
+# Never resume legacy caches: their participant filters and list indices are unsafe.
 all_features_list <- vector("list", length(window_indices))
+last_processed <- 0L
+if (file.exists(checkpoint_file)) {
+  checkpoint <- readRDS(checkpoint_file)
+  if (!is.list(checkpoint) ||
+      !identical(checkpoint$schema_version, checkpoint_schema_version) ||
+      !identical(checkpoint$window_indices, window_indices) ||
+      !identical(checkpoint$window_keys, window_keys) ||
+      length(checkpoint$last_processed) != 1L || !is.numeric(checkpoint$last_processed) ||
+      !is.finite(checkpoint$last_processed) || checkpoint$last_processed < 0 ||
+      checkpoint$last_processed != floor(checkpoint$last_processed) ||
+      checkpoint$last_processed > length(window_indices) ||
+      !is.list(checkpoint$features) || is.data.frame(checkpoint$features) ||
+      length(checkpoint$features) != length(window_indices)) {
+    stop("Invalid feature checkpoint: schema, window selection or progress does not match")
+  }
+  if (any(vapply(checkpoint$features, function(x) {
+    !is.null(x) && (!is.data.table(x) || nrow(x) != 1L)
+  }, logical(1L))) || any(!vapply(
+    checkpoint$features[seq_along(window_indices) > checkpoint$last_processed], is.null, logical(1L)
+  ))) {
+    stop("Invalid feature checkpoint: malformed results or unprocessed slots are not empty")
+  }
+  all_features_list <- checkpoint$features
+  last_processed <- as.integer(checkpoint$last_processed)
+  message(sprintf("Resuming after window %d", last_processed))
+}
+start_index <- last_processed + 1L
+pending_indices <- if (start_index <= length(window_indices)) {
+  seq.int(start_index, length(window_indices))
+} else integer()
 
-if (length(intermediate_files) > 0) {
-  message("Found intermediate files, resuming from previous progress...")
-  # Load the most recent one
-  latest_file <- intermediate_files[which.max(as.numeric(gsub(".*features_partial_(\\d+)\\.rds", "\\1", intermediate_files)))]
-  prev_features <- readRDS(latest_file)
-  all_features_list[seq_along(prev_features)] <- prev_features
-  start_index <- sum(sapply(prev_features, function(x) !is.null(x))) + 1
-  message(sprintf("Resuming from window %d", start_index))
-} else {
-  start_index <- 1
+save_checkpoint <- function() {
+  checkpoint <- list(
+    schema_version = checkpoint_schema_version, last_processed = last_processed,
+    window_indices = window_indices, window_keys = window_keys, features = all_features_list
+  )
+  tmp_file <- paste0(checkpoint_file, ".tmp")
+  saveRDS(checkpoint, tmp_file)
+  if (!file.rename(tmp_file, checkpoint_file)) stop("Cannot replace feature checkpoint")
+  message(sprintf("Saved checkpoint through window %d to %s", last_processed, checkpoint_file))
 }
 
 # Start timer
 start_time_all <- Sys.time()
 
 # Sequential execution with live progress
-for (i in start_index:length(window_indices)) {
+for (i in pending_indices) {
   row <- music_windows[window_indices[i], ]
-
-  # Skip windows already processed
-  if (!is.null(all_features_list[[i]])) next
 
   # Try-catch to skip any failed iterations safely
   features <- tryCatch(
     extract_features_for_window(
-      user_id = row$user_id,
-      start_time = row$start_time,
-      end_time = row$end_time
+      uid = row$user_id,
+      window_start = row$start_time,
+      window_end = row$end_time
     ),
     error = function(e) {
       message(sprintf("Error in window %d (%s - %s): %s",
@@ -396,31 +473,24 @@ for (i in start_index:length(window_indices)) {
     }
   )
 
-  # Ensure the output is exactly one row
-  if (is.data.table(features) && nrow(features) == 1L) {
-    all_features_list[[i]] <- features
-  } else if (!is.null(features) && nrow(features) > 1L) {
-    warning(sprintf("Feature extraction returned %d rows for window %d — keeping first row.", nrow(features), i))
-    all_features_list[[i]] <- features[1L, ]
-  } else {
-    all_features_list[[i]] <- NULL
+  if (!is.null(features) && (!is.data.table(features) || nrow(features) != 1L)) {
+    warning(sprintf("Feature extraction returned an invalid result for window %d; rejecting window.", i))
+    features <- NULL
   }
+  # Single-bracket assignment retains skipped NULL slots and their window indices.
+  all_features_list[i] <- list(features)
+  last_processed <- i
 
   # Progress indicator every N windows
   if (i %% 50 == 0 || i == length(window_indices)) {
     elapsed <- difftime(Sys.time(), start_time_all, units = "mins")
     pct <- round(100 * i / length(window_indices), 1)
-    message(sprintf("✓ Processed %d / %d windows (%.1f%%) — Elapsed: %.1f min",
+    message(sprintf("Processed %d / %d windows (%.1f%%) - Elapsed: %.1f min",
                     i, length(window_indices), pct, as.numeric(elapsed)))
-
-    # Intermediate save every 500 windows
-    if (i %% 500 == 0 || i == length(window_indices)) {
-      tmp_file <- sprintf("data/results/new/features_partial_%d.rds", i)
-      saveRDS(all_features_list, tmp_file)
-      message(sprintf("Saved intermediate results to %s", tmp_file))
-    }
   }
+  if (i %% 500L == 0L) save_checkpoint()
 }
+save_checkpoint()
 
 # --- 11. Combine Results and Save ---
 message("Combining results...")
@@ -430,21 +500,27 @@ all_features <- rbindlist(valid_features, fill = TRUE)
 # Ensure consistent column order before saving (optional but good practice)
 fixed_column_names <- c(
   "user_id", "start_time", "end_time", "time_bin",
-  names(gps_features),
+  gps_features,
   paste0("headset_", headset_states),
   paste0("detected_", detected_activity_keys),
   paste0("phone_", all_activity_names),
   paste0("app_", app_categories),
   paste0("screen_", screen_categories),
-  paste0("music_", spotify_numeric_features),
-  paste0("genius_", genius_numeric_features),
-  paste0("topic_", topic_numeric_features),
-  paste0("liwc_", liwc_numeric_features)
+  spotify_numeric_features,
+  genius_numeric_features,
+  topic_numeric_features,
+  liwc_numeric_features
 )
 final_cols <- intersect(fixed_column_names, names(all_features))
 all_features <- all_features[, ..final_cols]
 
 # Save final results
+attr(all_features, "extraction_provenance") <- list(
+  schema_version = checkpoint_schema_version, extractor = "participant_safe_v2",
+  participant_filter = "exact_user_id", gps_match = "exact_user_id_start_end",
+  track_aggregation = "unweighted_unique_title_artist", screen_lookback_seconds = 7200,
+  last_processed = last_processed, window_indices = window_indices
+)
 saveRDS(all_features, output_file)
 
 total_elapsed <- difftime(Sys.time(), start_time_all, units = "mins")

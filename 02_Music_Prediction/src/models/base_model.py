@@ -1,117 +1,96 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-import lightning as L
+import joblib
+import numpy as np
 import torch
-import torch.nn as nn
-from utils import calculate_metrics
 
 
 class BaseModel(ABC):
-    """Abstract base class for all models."""
+    """Single-target regression interface for tabular window loaders."""
 
     def __init__(self, config: dict[str, Any], wandb_logger=None):
-        self.config = config
+        self.config = dict(config)
         self.wandb_logger = wandb_logger
 
     @abstractmethod
-    def fit(self, dataloader: torch.utils.data.DataLoader, **kwargs):
-        """Fit model to training data."""
+    def fit(self, dataloader, **kwargs):
         raise NotImplementedError
 
     @abstractmethod
-    def predict(
-        self, dataloader: torch.utils.data.DataLoader, **kwargs
-    ) -> torch.Tensor:
-        """Do predictions."""
+    def predict(self, dataloader, **kwargs) -> torch.Tensor:
+        """Return one prediction per yielded row, shaped [N, 1]."""
         raise NotImplementedError
 
-    def evaluate(self, dataloader: torch.utils.data.DataLoader) -> dict[str, float]:
-        """Evaluate model with RMSE and R2 scores."""
-        predictions = self.predict(dataloader)
-        targets = torch.cat(
-            [y for _, y in dataloader], dim=0
-        )  # TODO: check if this is correct and what it does
-        return calculate_metrics(predictions, targets)
+    @staticmethod
+    def _loader_arrays(dataloader, require_targets=True):
+        features, targets = [], []
+        for x, y in dataloader:
+            x = torch.as_tensor(x).detach().cpu()
+            if x.ndim != 2:
+                raise ValueError("Tabular models require features shaped [rows, features].")
+            features.append(x.numpy())
+            if require_targets:
+                y = torch.as_tensor(y).detach().cpu()
+                if y.ndim not in (1, 2) or (y.ndim == 2 and y.shape[1] != 1):
+                    raise ValueError("Models learn one target at a time: use y shaped [N] or [N, 1].")
+                if len(y) != len(x):
+                    raise ValueError("Each feature row must have exactly one target.")
+                targets.append(y.reshape(-1).numpy())
+        if not features or not sum(len(x) for x in features):
+            raise ValueError("The data loader must yield at least one row.")
+        X = np.concatenate(features, axis=0)
+        y = np.concatenate(targets) if require_targets else None
+        if not np.isfinite(X).all() or (y is not None and not np.isfinite(y).all()):
+            raise ValueError("Models require finite preprocessed features and observed targets.")
+        return X, y
+
+    def evaluate(self, dataloader) -> dict[str, float]:
+        """Freeze one loader traversal so shuffling cannot misalign targets."""
+        from utils.metrics import calculate_metrics
+
+        batches = list(dataloader)
+        if not batches:
+            raise ValueError("Cannot evaluate an empty data loader.")
+        _, targets = self._loader_arrays(batches)
+        predictions = self.predict(batches).detach().cpu().reshape(-1)
+        if predictions.numel() != len(targets):
+            raise ValueError("Predictions and targets must have equal lengths.")
+        return {
+            name: float(value)
+            for name, value in calculate_metrics(predictions, torch.as_tensor(targets)).items()
+        }
+
+    def save(self, path):
+        """Persist classical wrappers or neural weights (load with architecture config)."""
+        if isinstance(self, torch.nn.Module):
+            torch.save(self.state_dict(), path)
+        else:
+            joblib.dump(self, path)
 
     @classmethod
-    def load(cls, path: str, config: dict[str, Any]):
-        """Load model from a file."""
-        model = cls(config)
-        if hasattr(model, "load_state_dict"):  # TODO: implement this
-            model.load_state_dict(torch.load(path))
-        else:
-            torch.load(path)
-        return model
+    def load(cls, path, config: dict[str, Any] | None = None):
+        """Load trusted local artifacts; neural weights are restored on CPU."""
+        if issubclass(cls, torch.nn.Module):
+            model = cls(config or {})
+            state = torch.load(path, map_location="cpu", weights_only=True)
+            model.load_state_dict(state.get("state_dict", state))
+            return model.eval()
+        loaded = joblib.load(path)
+        if isinstance(loaded, cls):
+            return loaded
+        # Existing trainer artifacts contain the estimator rather than the wrapper.
+        model = cls(config or {})
+        if hasattr(model, "model") and hasattr(loaded, "predict"):
+            model.model = loaded
+            return model
+        raise ValueError(f"Artifact does not contain a fitted {cls.__name__}.")
 
 
-class LightningBaseModel(L.LightningModule, BaseModel):
-    def __init__(self, config: dict[str, Any], wandb_logger=None):
-        L.LightningModule.__init__(self)
-        BaseModel.__init__(self, config, wandb_logger)
+def __getattr__(name):
+    # Preserve the existing neural base import without requiring Lightning for baselines.
+    if name == "LightningBaseModel":
+        from .lightning_base import LightningBaseModel
 
-    def fit(self, dataloader: torch.utils.data.DataLoader, **kwargs):
-        raise NotImplementedError("Use the trainer to fit Lightning models.")
-
-    def predict(
-        self, dataloader: torch.utils.data.DataLoader, **kwargs
-    ) -> torch.Tensor:
-        trainer = kwargs.get("trainer")
-        if trainer is None:
-            trainer = L.Trainer(
-                logger=False,
-                enable_checkpointing=False,
-                enable_progress_bar=False,
-                accelerator="auto",
-                devices="auto",
-            )
-
-        predictions = trainer.predict(self, dataloaders=dataloader)
-        if not predictions:
-            return torch.empty(0)
-        return torch.cat(
-            [prediction.detach().cpu() for prediction in predictions], dim=0
-        )
-
-    def training_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
-        """Training Step for PyTorch Lightning."""
-        x, y = batch
-        y_hat = self(x)  # TODO: check if this is correct and what does it actually do
-        loss = nn.functional.mse_loss(y_hat, y)
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
-        return loss
-
-    def validation_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
-        """Validation Step for PyTorchLightning."""
-        x, y = batch
-        y_hat = self(x)
-        loss = nn.functional.mse_loss(y_hat, y)
-        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        return loss
-
-    def test_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
-        """Test Step for PyTorch Lightning."""
-        x, y = batch
-        y_hat = self(x)
-        loss = nn.functional.mse_loss(y_hat, y)
-        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        return loss
-
-    def predict_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int):
-        """Predict Step for PyTorch Lightning."""
-        x, _ = batch
-        return self(x)
-
-    def configure_optimizers(self):
-        """Configure Optimizers for PyTorch Lightning."""
-        return torch.optim.Adam(
-            self.parameters(),
-            lr=self.config.get("learning_rate", 1e-3),
-            weight_decay=self.config.get("weight_decay", 1e-5),
-        )
+        return LightningBaseModel
+    raise AttributeError(name)

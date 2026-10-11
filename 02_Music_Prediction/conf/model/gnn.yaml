@@ -1,8 +1,13 @@
 name: gnn
+# The tabular pipeline has no graph construction. Opt in only from a graph-specific consumer.
+graph_input: false
+graph_level: true
 hidden_dim: 64
 num_layers: 2
 dropout: 0.1
 learning_rate: 0.001
-weight_decay: 0.00001
-max_epochs: 50
-precision: 32-true
+weight_decay: 0.0001
+max_epochs: 100
+early_stopping_patience: 12
+scheduler_patience: 4
+random_state: 42

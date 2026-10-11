@@ -217,4 +217,4 @@ lda30alpha001/
 *.pt
 *.pth
 
-!02_Music_Prediction_Refactor/src/data/
+!02_Music_Prediction/src/data/

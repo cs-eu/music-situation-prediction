@@ -1,8 +1,10 @@
 import json
 import subprocess
 import sys
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from zipfile import ZipFile
 
 import joblib
 import numpy as np
@@ -193,9 +195,10 @@ def test_neural_fit_runs_with_validation_scheduler(name):
     assert model.predict(loader()).shape == (20, 1)
 
 
-def test_gnn_fails_instead_of_inventing_tabular_graphs():
+def test_tabular_gnn_requires_a_training_feature_schema():
+    pytest.importorskip("torch_geometric")
     kind = neural_class("GNNModel")
-    with pytest.raises(ValueError, match="does not construct graphs"):
+    with pytest.raises(ValueError, match="feature_names"):
         kind({"input_dim": 3, "output_dim": 1})
 
 
@@ -236,7 +239,7 @@ def test_tabpfn_resource_download_and_dependency_guards(monkeypatch):
         TabPFNModel({"device": "cuda"}).fit(loader())
 
 
-def test_tabpfn_opt_in_small_fit_and_descriptive_failure(monkeypatch):
+def test_tabpfn_opt_in_small_fit_and_descriptive_failure(monkeypatch, native_tabpfn):
     from models import TabPFNModel
 
     calls = {}
@@ -251,15 +254,22 @@ def test_tabpfn_opt_in_small_fit_and_descriptive_failure(monkeypatch):
         def predict(self, X):
             return np.full(len(X), self.mean)
 
+        @classmethod
+        def create_default_for_version(cls, model_version, **kwargs):
+            assert model_version == "v2"
+            return cls(**kwargs)
+
     monkeypatch.setitem(sys.modules, "tabpfn", SimpleNamespace(TabPFNRegressor=FakeRegressor))
     model = TabPFNModel({"allow_model_download": True}).fit(loader())
     assert model.predict(loader()).shape == (20, 1)
-    assert calls == {"device": "cpu", "random_state": 42, "n_estimators": 4}
+    assert calls == {"device": "cpu", "random_state": 42, "n_estimators": 4,
+                     "inference_config": {"SUBSAMPLE_SAMPLES": None}}
 
-    def failed_download(**kwargs):
-        raise OSError("weight authentication failed")
+    class FailedDownload(FakeRegressor):
+        def __init__(self, **kwargs):
+            raise OSError("weight authentication failed")
 
-    monkeypatch.setitem(sys.modules, "tabpfn", SimpleNamespace(TabPFNRegressor=failed_download))
+    monkeypatch.setitem(sys.modules, "tabpfn", SimpleNamespace(TabPFNRegressor=FailedDownload))
     with pytest.raises(RuntimeError, match="license/authentication"):
         TabPFNModel({"allow_model_download": True}).fit(loader())
 
@@ -281,22 +291,32 @@ def native_tabpfn(monkeypatch):
         def predict(self, X):
             return np.full(len(X), self.mean)
 
+        def to(self, device):
+            self.params["device"] = device
+            return self
+
+        @classmethod
+        def create_default_for_version(cls, model_version, **kwargs):
+            assert model_version == "v2"
+            return cls(model_path="tabpfn-v2-regressor.ckpt", **kwargs)
+
         def __reduce_ex__(self, protocol):
             raise AssertionError("The fitted estimator and its foundation weights must not be pickled.")
 
     def save_fitted(estimator, path):
         assert Path(path).suffix == ".tabpfn_fit"
         calls["save"].append(str(path))
-        Path(path).write_bytes(json.dumps({
-            "fitted_context": {"mean": estimator.mean, "rows": estimator.rows},
-            "model_path": estimator.params.get("model_path"),
-        }).encode("ascii"))
+        with ZipFile(path, "w") as archive:
+            archive.writestr("init_params.json", json.dumps(estimator.params))
+            archive.writestr("fitted_context.json", json.dumps({"mean": estimator.mean, "rows": estimator.rows}))
 
     def load_fitted(path, *, device="auto"):
         assert Path(path).suffix == ".tabpfn_fit"
-        payload = json.loads(Path(path).read_bytes())
+        with ZipFile(path) as archive:
+            payload = {"init_params": json.loads(archive.read("init_params.json")),
+                       "fitted_context": json.loads(archive.read("fitted_context.json"))}
         calls["load"].append({"device": device, "payload": payload})
-        estimator = FakeRegressor(device=device, model_path=payload["model_path"])
+        estimator = FakeRegressor(device=device, model_path=payload["init_params"]["model_path"])
         estimator.mean = payload["fitted_context"]["mean"]
         estimator.rows = payload["fitted_context"]["rows"]
         return estimator
@@ -305,6 +325,11 @@ def native_tabpfn(monkeypatch):
     monkeypatch.setitem(sys.modules, "tabpfn.model_loading", SimpleNamespace(
         save_fitted_tabpfn_model=save_fitted, load_fitted_tabpfn_model=load_fitted,
     ))
+    from models import TabPFNModel
+
+    monkeypatch.setattr(TabPFNModel, "_backend_versions", staticmethod(lambda: {
+        "tabpfn": "9.1.0", "scikit-learn": "1.8.0", "torch": "2.6.0", "numpy": "1.26.3",
+    }))
     return calls
 
 
@@ -333,7 +358,8 @@ def test_tabpfn_native_joblib_roundtrip_is_lazy_and_cpu_portable(native_tabpfn, 
         restored = restored_bundle["model"]
         assert restored.config == config
         assert restored.model is None
-        assert json.loads(restored._fitted_payload)["fitted_context"]["rows"] == 20
+        with ZipFile(BytesIO(restored._fitted_payload)) as archive:
+            assert json.loads(archive.read("fitted_context.json"))["rows"] == 20
         assert not native_tabpfn["load"]
         resaved_path = tmp_path / "resaved.joblib"
         joblib.dump(restored_bundle, resaved_path)
@@ -362,6 +388,7 @@ def test_tabpfn_native_reload_respects_explicit_inference_device(native_tabpfn, 
     model.save(path)
     restored = TabPFNModel.load(path)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
     restored.predict(loader(), **({"inference_device": "cuda:0"} if override == "predict" else {}))
     assert native_tabpfn["load"][0]["device"] == "cuda:0"
 

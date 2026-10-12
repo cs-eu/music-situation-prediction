@@ -1,3 +1,4 @@
+from numbers import Integral
 from typing import Any
 
 import torch
@@ -8,10 +9,14 @@ from .base_model import BaseModel
 class LightGBMModel(BaseModel):
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
+        device_type = self.config.get("device_type", "cpu")
+        if not isinstance(device_type, str) or device_type not in ("cpu", "gpu", "cuda"):
+            raise ValueError("LightGBM device_type must be 'cpu', 'gpu' (OpenCL), or 'cuda'.")
         seed = self.config.get("random_state", 42)
         self.params = {
             "objective": "regression",
             "metric": "l2",
+            "device_type": device_type,
             "boosting_type": self.config.get("boosting_type", "gbdt"),
             "num_leaves": self.config.get("num_leaves", 31),
             "max_depth": self.config.get("max_depth", 8),
@@ -27,10 +32,21 @@ class LightGBMModel(BaseModel):
             "bagging_seed": seed,
             "feature_fraction_seed": seed,
             "data_random_seed": seed,
-            "deterministic": True,
-            "force_col_wise": True,
             "num_threads": self.config.get("n_jobs", 4),
         }
+        # These histogram/reproducibility settings are supported only on CPU.
+        if device_type == "cpu":
+            self.params.update(deterministic=True, force_col_wise=True)
+        for option in ("gpu_device_id", "gpu_platform_id"):
+            value = self.config.get(option)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, Integral) or value < -1:
+                raise ValueError(f"LightGBM {option} must be an integer >= -1 (-1 selects the default).")
+            if device_type == "cpu" or (option == "gpu_platform_id" and device_type != "gpu"):
+                supported = "device_type='gpu' (OpenCL)" if option == "gpu_platform_id" else "device_type='gpu' or 'cuda'"
+                raise ValueError(f"LightGBM {option} requires {supported}; leave it null otherwise.")
+            self.params[option] = int(value)
         self.num_rounds = self.config.get("num_rounds", 300)
         self.model = None
 
@@ -51,10 +67,30 @@ class LightGBMModel(BaseModel):
             patience = self.config.get("early_stopping_rounds", 30)
             if patience > 0:
                 callbacks.append(lgb.early_stopping(patience, verbose=False))
-        self.model = lgb.train(
-            self.params, train_data, num_boost_round=self.num_rounds,
-            valid_sets=valid_sets, callbacks=callbacks,
-        )
+        try:
+            self.model = lgb.train(
+                self.params, train_data, num_boost_round=self.num_rounds,
+                valid_sets=valid_sets, callbacks=callbacks,
+            )
+        except lgb.basic.LightGBMError as exc:
+            device_type = self.params["device_type"]
+            if device_type == "cpu":
+                raise
+            if device_type == "cuda":
+                guidance = (
+                    "Use a CUDA-enabled LightGBM build (cmake.define.USE_CUDA=ON), a compatible "
+                    "NVIDIA GPU/driver and CUDA runtime on Linux; an ordinary pip wheel or "
+                    "CUDA-enabled PyTorch does not provide LightGBM CUDA support."
+                )
+            else:
+                guidance = (
+                    "Use an OpenCL-enabled LightGBM build (cmake.define.USE_GPU=ON) and a working "
+                    "vendor OpenCL runtime; check gpu_platform_id and gpu_device_id."
+                )
+            raise RuntimeError(
+                f"LightGBM device_type='{device_type}' training failed. {guidance} "
+                f"No CPU fallback was attempted. Backend error: {exc}"
+            ) from exc
         return self
 
     def predict(self, dataloader: torch.utils.data.DataLoader, **kwargs) -> torch.Tensor:

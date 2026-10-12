@@ -35,7 +35,7 @@ LOGGER = logging.getLogger(__name__)
 NEURAL_MODELS = {"neural_net", "transformer", "gnn"}
 
 
-def _loader(features, targets=None, batch_size=256, shuffle=False, seed=42, workers=0):
+def _loader(features, targets=None, batch_size=256, shuffle=False, seed=42, workers=0, pin_memory=False):
     features = torch.as_tensor(np.asarray(features), dtype=torch.float32)
     if targets is None:
         targets = np.zeros((len(features), 1), dtype=np.float32)
@@ -43,6 +43,7 @@ def _loader(features, targets=None, batch_size=256, shuffle=False, seed=42, work
     return DataLoader(
         TensorDataset(features, targets), batch_size=batch_size, shuffle=shuffle,
         num_workers=workers, generator=torch.Generator().manual_seed(seed),
+        pin_memory=pin_memory,
     )
 
 
@@ -60,20 +61,50 @@ class TrainedPredictor:
     data_quality: dict[str, Any] = field(default_factory=dict)
     run_metadata: dict[str, Any] = field(default_factory=dict)
 
-    def predict(self, frame: pd.DataFrame, batch_size: int = 256) -> np.ndarray:
+    def predict(self, frame: pd.DataFrame, batch_size: int = 256,
+                device: str | torch.device | None = None, precision: str | None = None) -> np.ndarray:
         missing = set(self.feature_columns) - set(frame.columns)
         if missing:
             raise ValueError(f"Prediction data is missing context columns: {sorted(missing)}")
         if not len(frame):
             return np.empty(0, dtype=float)
         features = self.preprocessor.transform(frame[self.feature_columns])
-        loader = _loader(features, batch_size=batch_size)
         if self.model_name in NEURAL_MODELS:
-            self.model.cpu().eval()
-            with torch.inference_mode():
-                predictions = torch.cat([self.model(x).cpu().reshape(-1) for x, _ in loader])
+            parameter = next(self.model.parameters())
+            if device == "auto":
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+            selected_device = torch.device(device) if device is not None else parameter.device
+            if selected_device.type == "cuda" and not torch.cuda.is_available():
+                raise ValueError("CUDA inference requested, but CUDA-enabled PyTorch/a GPU is unavailable.")
+            effective_precision = precision or self.model_config.get("precision", "32-true")
+            if precision is None and selected_device.type == "cpu" and effective_precision in {"16-mixed", "bf16-mixed"}:
+                effective_precision = "32-true"
+            if effective_precision not in {"32-true", "64-true", "16-mixed", "bf16-mixed"}:
+                raise ValueError("Predictor precision must be 32-true, 64-true, 16-mixed, or bf16-mixed.")
+            input_dtype = torch.float64 if effective_precision == "64-true" else torch.float32
+            if parameter.dtype == input_dtype:
+                self.model.to(selected_device).eval()
+            else:
+                self.model.to(selected_device, dtype=input_dtype).eval()
+            loader = _loader(features, batch_size=batch_size, pin_memory=selected_device.type == "cuda")
+            dtype = torch.bfloat16 if effective_precision == "bf16-mixed" else torch.float16
+            with torch.inference_mode(), torch.autocast(selected_device.type, dtype=dtype, cache_enabled=False,
+                                                        enabled=effective_precision in {"16-mixed", "bf16-mixed"}):
+                batches = []
+                for x, _ in loader:
+                    values = self.model(x.to(selected_device, dtype=input_dtype, non_blocking=loader.pin_memory))
+                    if values.dtype in {torch.float16, torch.bfloat16}:
+                        values = values.float()
+                    batches.append(values.cpu().reshape(-1))
+                predictions = torch.cat(batches)
         else:
-            predictions = self.model.predict(loader)
+            loader = _loader(features, batch_size=batch_size)
+            if self.model_name == "tabpfn" and device is not None:
+                predictions = self.model.predict(loader, inference_device=device)
+            else:
+                if device is not None and str(device) not in {"cpu", "auto"}:
+                    raise ValueError(f"{self.model_name} device is controlled by its backend configuration, not predict(device=...).")
+                predictions = self.model.predict(loader)
         predictions = torch.as_tensor(predictions).detach().cpu().numpy().reshape(-1, 1)
         return self.target_scaler.inverse_transform(predictions).reshape(-1)
 
@@ -86,11 +117,10 @@ class Trainer:
 
     def train(self):
         model_name = self._get_model_name()
-        if model_name == "gnn":
+        if model_name == "gnn" and self._get_model_config().get("graph_input", False):
             raise ValueError(
-                "The window dataset is tabular, not a graph. GNN training requires an "
-                "explicit graph dataset and leakage-safe edges; use random_forest, "
-                "elastic_net, lightgbm, neural_net or transformer for these data."
+                "graph_input=True requires explicit PyG Data/Batch inputs, not the raw window table. "
+                "Use graph_input=False for the per-window modality feature graph in this trainer."
             )
         frame = self._load_data()
         self.data_quality = frame.attrs.get("data_quality", {})
@@ -172,6 +202,8 @@ class Trainer:
 
         if model_name in NEURAL_MODELS:
             manifest["versions"]["lightning"] = version("lightning")
+            if model_name == "gnn":
+                manifest["versions"]["torch_geometric"] = version("torch-geometric")
         elif model_name in {"lightgbm", "tabpfn"}:
             manifest["versions"][model_name] = version(model_name)
         self._write_json(output / f"{model_name}_manifest.json", manifest)
@@ -214,6 +246,17 @@ class Trainer:
                 quality["quarantined_targets"].append("liwc_anger")
                 quality["provisional_source_data"] = True
                 LOGGER.warning("Quarantining liwc_anger: it duplicates genius_anger; regenerate independent LIWC labels.")
+        max_rows = get_config_value(self.config, ["dataset", "max_rows"])
+        if max_rows is not None:
+            if isinstance(max_rows, bool) or not isinstance(max_rows, (int, np.integer)) or max_rows < 1:
+                raise ValueError("dataset.max_rows must be a positive integer or null.")
+            available = len(frame)
+            if available > max_rows:
+                frame = frame.sample(n=int(max_rows), random_state=self.seed).sort_index()
+                LOGGER.info("Using an explicit %d/%d-window cohort (seed=%d) before participant splitting.",
+                            len(frame), available, self.seed)
+            quality["sampling"] = {"max_rows": int(max_rows), "available_rows": available,
+                                   "selected_rows": len(frame), "seed": self.seed}
         frame.attrs["data_quality"] = quality
         return frame
 
@@ -267,6 +310,8 @@ class Trainer:
                    "n_test": len(test), **cv_metrics, **validation_metrics,
                    "test_evaluated": bool(get_config_value(self.config, ["evaluate_test"], False)) and not test.empty,
                    "provisional_source_data": bool(getattr(self, "data_quality", {}).get("provisional_source_data", False))}
+        if model_name in NEURAL_MODELS:
+            metrics["evaluation_device"] = str(next(predictor.model.parameters()).device)
         if val is not None and not val.empty:
             metrics.update({
                 f"validation_{key}": value
@@ -293,6 +338,8 @@ class Trainer:
         log_model_metrics(model_name, metrics)
         safe_target = re.sub(r"[^A-Za-z0-9_.-]", "_", target_column)
         output = resolve_path(get_config_value(self.config, ["output_dir"], "outputs/models"))
+        if model_name in NEURAL_MODELS:
+            predictor.model.cpu().eval()
         joblib.dump(predictor, output / f"{model_name}_{safe_target}.joblib")
         return metrics
 
@@ -343,18 +390,31 @@ class Trainer:
         y = target_scaler.transform(train[[target]])
         model_name = self._get_model_name()
         model_config = {**config, "input_dim": x.shape[1], "output_dim": 1,
-                        "random_state": config.get("random_state", self.seed)}
+                         "random_state": config.get("random_state", self.seed)}
+        if model_name in NEURAL_MODELS:
+            selected_precision = get_config_value(self.config, ["precision"], config.get("precision", "32-true"))
+            selected_precision = {32: "32-true", 64: "64-true", 16: "16-mixed",
+                                  "32": "32-true", "64": "64-true", "16": "16-mixed",
+                                  "bf16": "bf16-mixed"}.get(selected_precision, selected_precision)
+            if selected_precision not in {"32-true", "64-true", "16-mixed", "bf16-mixed"}:
+                raise ValueError("Supported neural precisions are 32-true, 64-true, 16-mixed and bf16-mixed; true-half training is unsupported.")
+            model_config["precision"] = selected_precision
+        if model_name == "gnn":
+            model_config["feature_names"] = preprocessor.get_feature_names_out().tolist()
         model = self._build_model(model_name, model_config, x.shape[1])
         loader = _loader(x, y, batch_size=int(get_config_value(self.config, ["batch_size"], 256)),
                          shuffle=model_name in NEURAL_MODELS, seed=self.seed,
-                         workers=int(get_config_value(self.config, ["num_workers"], 0)))
+                         workers=int(get_config_value(self.config, ["num_workers"], 0)),
+                         pin_memory=model_name in NEURAL_MODELS and torch.cuda.is_available()
+                         and get_config_value(self.config, ["accelerator"], "auto") != "cpu")
         if model_name in NEURAL_MODELS:
             from lightning.pytorch import Trainer as LightningTrainer
             from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
             val_loader = _loader(preprocessor.transform(val[list(features)]),
                                  target_scaler.transform(val[[target]]),
-                                 batch_size=int(get_config_value(self.config, ["batch_size"], 256)))
+                                 batch_size=int(get_config_value(self.config, ["batch_size"], 256)),
+                                 pin_memory=loader.pin_memory)
             with tempfile.TemporaryDirectory(prefix="music-checkpoint-") as checkpoint_dir:
                 checkpoint = ModelCheckpoint(dirpath=checkpoint_dir, monitor="val_loss", mode="min", save_top_k=1)
                 early_stop = EarlyStopping(monitor="val_loss", mode="min", patience=int(config.get("early_stopping_patience", config.get("patience", 12))),
@@ -363,7 +423,7 @@ class Trainer:
                     max_epochs=int(config.get("max_epochs", 100)),
                     accelerator=get_config_value(self.config, ["accelerator"], "auto"),
                     devices=get_config_value(self.config, ["devices"], 1),
-                    precision=get_config_value(self.config, ["precision"], config.get("precision", "32-true")),
+                    precision=model_config["precision"],
                     logger=False, callbacks=[checkpoint, early_stop],
                     deterministic=True, enable_progress_bar=bool(get_config_value(self.config, ["progress_bar"], False)),
                     enable_model_summary=False, num_sanity_val_steps=0,
@@ -373,7 +433,7 @@ class Trainer:
                     raise RuntimeError("No valid neural validation checkpoint was produced.")
                 state = torch.load(checkpoint.best_model_path, map_location="cpu", weights_only=True)
                 model.load_state_dict(state["state_dict"])
-            model.cpu().eval()
+            model.to(trainer.strategy.root_device).eval()
             model._trainer = None
         else:
             if model_name == "lightgbm" and val is not None and not val.empty:
@@ -395,6 +455,7 @@ class Trainer:
             "tabpfn": ("models.tabpfn", "TabPFNModel"),
             "neural_net": ("models.neural_net", "NeuralNet"),
             "transformer": ("models.transformer", "TransformerModel"),
+            "gnn": ("models.gnn", "GNNModel"),
         }
         if model_name not in registry:
             raise ValueError(f"Unknown model {model_name!r}; available: {', '.join(registry)}")
@@ -405,7 +466,13 @@ class Trainer:
         return str(self._get_model_config().get("name", "elastic_net"))
 
     def _get_model_config(self):
-        return self._plain_mapping(get_config_value(self.config, ["model"], {}))
+        config = self._plain_mapping(get_config_value(self.config, ["model"], {}))
+        checkpoint = get_config_value(self.config, ["tabpfn_checkpoint"])
+        if config.get("name") == "tabpfn" and checkpoint is not None:
+            config["model_path"] = str(resolve_path(checkpoint))
+            config["model_kwargs"] = dict(config.get("model_kwargs") or {})
+            config["model_kwargs"].pop("model_path", None)
+        return config
 
     @staticmethod
     def _plain_mapping(value):

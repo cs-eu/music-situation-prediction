@@ -23,9 +23,11 @@ devices: 1
 progress_bar: false
 evaluate_test: false
 output_dir: outputs/models
+tabpfn_checkpoint: null
 
 dataset:
   drop_features: []
+  max_rows: null
 
 tuning:
   enabled: true

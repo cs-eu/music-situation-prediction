@@ -1,11 +1,16 @@
 name: tabpfn
 # Conservative wrapper resource limits, not universal limits of every TabPFN version.
-device: cpu
+device: auto
+inference_device: auto
 max_train_rows: 10000
 max_cpu_rows: 1000
 max_features: 500
 allow_model_download: false
+# Local files may be .ckpt or .safetensors. Automatic downloads, when explicitly
+# enabled, use only public ungated TabPFN-v2, never the gated upstream default.
+model_version: v2
 model_path: null
 random_state: 42
 model_kwargs:
-  n_estimators: 4
+  n_estimators: 1
+  n_preprocessing_jobs: 1

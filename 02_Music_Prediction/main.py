@@ -1,5 +1,9 @@
+import os
 import sys
 from pathlib import Path
+
+# A non-Lightning backend may initialize CUDA first in a multi-model sweep.
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 import hydra
 from omegaconf import DictConfig, OmegaConf

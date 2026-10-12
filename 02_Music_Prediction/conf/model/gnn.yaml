@@ -1,5 +1,7 @@
 name: gnn
-# The tabular pipeline has no graph construction. Opt in only from a graph-specific consumer.
+# Experimental per-window modality graph prior, not a learned or causal sensor graph.
+# Trainer supplies dynamic input_dim and train-fitted transformed feature_names.
+# Set graph_input: true only for external consumers providing explicit PyG Data/Batch.
 graph_input: false
 graph_level: true
 hidden_dim: 64

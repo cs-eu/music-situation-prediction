@@ -4,6 +4,7 @@ import joblib
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
 from training.trainer import Trainer
 
@@ -105,10 +106,10 @@ def test_test_metrics_require_explicit_final_evaluation(training_case):
     assert np.isfinite(result["validation_RMSE"])
 
 
-def test_gnn_fails_before_loading_data(training_case):
+def test_explicit_graph_mode_is_not_misinterpreted_as_tabular_data(training_case):
     _, config = training_case
-    config["model"] = {"name": "gnn"}
-    with pytest.raises(ValueError, match="not a graph"):
+    config["model"] = {"name": "gnn", "graph_input": True}
+    with pytest.raises(ValueError, match="graph_input=True"):
         Trainer(config).train()
 
 
@@ -123,6 +124,48 @@ def test_ambiguous_cross_participant_windows_are_all_quarantined(training_case):
     assert loaded.attrs["data_quality"]["provisional_source_data"]
 
 
+def test_explicit_cohort_cap_is_deterministic_and_backend_independent(training_case):
+    frame, config = training_case
+    config["dataset"] = {"max_rows": 80}
+    first = Trainer(config)._load_data()
+    config["model"] = {"name": "tabpfn"}
+    second = Trainer(config)._load_data()
+    pd.testing.assert_frame_equal(first, second)
+    assert len(first) == 80
+    assert first.attrs["data_quality"]["sampling"]["available_rows"] == len(frame)
+    assert first.attrs["data_quality"]["sampling"]["selected_rows"] == 80
+    np.testing.assert_allclose(first["music_track_energy"], frame.loc[first.index, "music_track_energy"], rtol=1e-12)
+
+
+@pytest.mark.parametrize("cap", [0, -1, True, 2.5, "100"])
+def test_invalid_cohort_caps_are_rejected(training_case, cap):
+    _, config = training_case
+    config["dataset"] = {"max_rows": cap}
+    with pytest.raises(ValueError, match="dataset.max_rows"):
+        Trainer(config)._load_data()
+
+
+def test_quarantine_is_applied_before_cohort_sampling(training_case):
+    frame, config = training_case
+    duplicate = frame.iloc[[0]].copy()
+    duplicate["user_id"] = 1000
+    pd.concat([frame, duplicate], ignore_index=True).to_csv(config["data_path"], index=False)
+    config["dataset"] = {"max_rows": 50}
+    loaded = Trainer(config)._load_data()
+    assert len(loaded) == 50
+    assert loaded.attrs["data_quality"]["quarantined_rows"] == 2
+
+
+def test_shared_checkpoint_override_is_tabpfn_specific(training_case, tmp_path):
+    _, config = training_case
+    config["tabpfn_checkpoint"] = str(tmp_path / "weights.ckpt")
+    assert "model_path" not in Trainer(config)._get_model_config()
+    config["model"] = {"name": "tabpfn", "model_kwargs": {"n_estimators": 1}}
+    model_config = Trainer(config)._get_model_config()
+    assert model_config["model_path"] == config["tabpfn_checkpoint"]
+    assert model_config["model_kwargs"] == {"n_estimators": 1}
+
+
 def test_corrupted_liwc_target_is_rejected_if_explicitly_requested(training_case):
     frame, config = training_case
     frame["genius_anger"] = frame["music_track_energy"]
@@ -133,10 +176,12 @@ def test_corrupted_liwc_target_is_rejected_if_explicitly_requested(training_case
         Trainer(config).train()
 
 
-@pytest.mark.parametrize("name", ["neural_net", "transformer"])
+@pytest.mark.parametrize("name", ["neural_net", "transformer", "gnn"])
 def test_neural_training_restores_a_portable_complete_predictor(training_case, name, monkeypatch):
     pytest.importorskip("lightning")
     import lightning.pytorch as lightning
+    if name == "gnn":
+        pytest.importorskip("torch_geometric")
 
     real_trainer = lightning.Trainer
     precision_settings = []
@@ -164,10 +209,39 @@ def test_neural_training_restores_a_portable_complete_predictor(training_case, n
     artifact = joblib.load(f"{config['output_dir']}/{name}_music_track_energy.joblib")
     assert not artifact.model.training
     assert artifact.model._trainer is None
+    assert metrics["evaluation_device"] == "cpu"
+    assert artifact.model_config["precision"] == "32-true"
     np.testing.assert_allclose(
         artifact.predict(frame.iloc[:9], batch_size=1),
         artifact.predict(frame.iloc[:9], batch_size=9), rtol=1e-5, atol=1e-6,
     )
+    mixed = artifact.predict(frame.iloc[:9], device="cpu", precision="bf16-mixed")
+    assert np.isfinite(mixed).all()
+    assert mixed.dtype in {np.dtype("float32"), np.dtype("float64")}
+    assert artifact.model._train_error.dtype == torch.float64
+
+
+def test_true_double_training_and_manual_inference_preserve_dtype(training_case):
+    pytest.importorskip("lightning")
+    frame, config = training_case
+    config["model"] = {"name": "neural_net", "hidden_dims": [8], "dropout": 0, "max_epochs": 2}
+    config["accelerator"] = "cpu"
+    config["precision"] = "64-true"
+    Trainer(config).train()
+    artifact = joblib.load(f"{config['output_dir']}/neural_net_music_track_energy.joblib")
+    assert next(artifact.model.parameters()).dtype == torch.float64
+    predictions = artifact.predict(frame.iloc[:5], device="cpu")
+    assert predictions.dtype == np.float64
+    assert np.isfinite(predictions).all()
+
+
+@pytest.mark.parametrize("precision", ["16-true", "bf16-true"])
+def test_true_half_training_is_rejected(training_case, precision):
+    _, config = training_case
+    config["model"] = {"name": "neural_net", "max_epochs": 1}
+    config["precision"] = precision
+    with pytest.raises(ValueError, match="true-half training is unsupported"):
+        Trainer(config).train()
 
 
 def test_real_lightgbm_uses_validation_and_roundtrips_predictor(training_case):

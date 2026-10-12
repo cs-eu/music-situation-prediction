@@ -1,5 +1,12 @@
 from setuptools import find_packages, setup
 
+MODEL_EXTRAS = {
+    "neural": ["lightning>=2.2"],
+    "graph": ["lightning>=2.2", "torch-geometric>=2.5"],
+    "lightgbm": ["lightgbm>=4.0"],
+    "tabpfn": ["tabpfn>=9.1,<10"],
+}
+
 setup(
     name="situation-prediction",
     version="0.1.0",
@@ -19,13 +26,11 @@ setup(
         "omegaconf>=2.3",
     ],
     extras_require={
-        "neural": ["lightning>=2.2"],
+        **MODEL_EXTRAS,
+        "all": sorted({requirement for requirements in MODEL_EXTRAS.values() for requirement in requirements}),
         "tracking": ["wandb>=0.16"],
         "plots": ["matplotlib>=3.8", "seaborn>=0.13"],
         "explain": ["shap>=0.45"],
-        "graph": ["lightning>=2.2", "torch-geometric>=2.5"],
-        "lightgbm": ["lightgbm>=4.0"],
-        "tabpfn": ["tabpfn>=2.0"],
         "test": ["pytest>=8.0"],
     },
 )

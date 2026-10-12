@@ -1,4 +1,10 @@
 name: lightgbm
+# CPU is portable; gpu uses OpenCL, cuda requires a CUDA-enabled LightGBM build.
+device_type: cpu
+# null uses the backend default; -1 also selects the default device/platform.
+gpu_device_id: null
+# OpenCL only; keep null for cpu/cuda.
+gpu_platform_id: null
 num_rounds: 300
 num_leaves: 31
 max_depth: 8
